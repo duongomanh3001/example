@@ -1,11 +1,13 @@
 package iuh.fit.cscore_be.dto.request;
 
 import iuh.fit.cscore_be.enums.AssignmentType;
+import iuh.fit.cscore_be.enums.ProgrammingLanguage;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.Set;
 
 @Data
 public class AssignmentRequest {
@@ -34,4 +36,6 @@ public class AssignmentRequest {
     private Boolean allowLateSubmission = false;
     
     private Boolean autoGrade = true;
+    
+    private Set<ProgrammingLanguage> programmingLanguages;
 }

@@ -159,18 +159,29 @@ function AssignmentAttempt({ params }: Props) {
         const detectedLanguages = new Set<string>();
         programmingAnswers.forEach(ans => {
           const code = ans.answer;
-          if (code.includes('public class') || code.includes('System.out.println') || code.includes('import java')) {
+          
+          // Enhanced language detection logic
+          if (code.includes('public class') || code.includes('System.out.println') || code.includes('import java') || code.includes('String[]') || code.includes('public static void main')) {
             detectedLanguages.add('JAVA');
             ans.language = 'JAVA';
-          } else if (code.includes('print(') || code.includes('def ') || (code.includes('import ') && !code.includes('#include'))) {
+          } else if (code.includes('def ') || code.includes('print(') || code.includes('import ') && !code.includes('#include') || code.includes('->') || code.includes('str:') || code.includes('int:')) {
             detectedLanguages.add('PYTHON');
             ans.language = 'PYTHON';
-          } else if (code.includes('#include') && (code.includes('iostream') || code.includes('vector') || code.includes('string>'))) {
+          } else if (code.includes('#include') && (code.includes('iostream') || code.includes('vector') || code.includes('string>') || code.includes('cout') || code.includes('cin'))) {
             detectedLanguages.add('CPP');
             ans.language = 'CPP';
           } else if (code.includes('#include') && (code.includes('stdio.h') || code.includes('printf') || code.includes('scanf'))) {
             detectedLanguages.add('C');
             ans.language = 'C';
+          } else {
+            // Enhanced fallback detection
+            if (/def\s+\w+\s*\(/.test(code) || /:\s*int/.test(code) || /:\s*str/.test(code)) {
+              detectedLanguages.add('PYTHON');
+              ans.language = 'PYTHON';
+            } else {
+              detectedLanguages.add('C');
+              ans.language = 'C';
+            }
           }
         });
 

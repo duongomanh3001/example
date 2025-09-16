@@ -1,11 +1,13 @@
 package iuh.fit.cscore_be.dto.response;
 
 import iuh.fit.cscore_be.enums.AssignmentType;
+import iuh.fit.cscore_be.enums.ProgrammingLanguage;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.Set;
 
 @Data
 @NoArgsConstructor
@@ -24,6 +26,7 @@ public class DetailedAssignmentResponse {
     private Boolean isActive;
     private Boolean allowLateSubmission;
     private Boolean autoGrade;
+    private Set<ProgrammingLanguage> programmingLanguages;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     

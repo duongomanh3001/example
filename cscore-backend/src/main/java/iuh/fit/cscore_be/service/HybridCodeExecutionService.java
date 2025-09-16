@@ -155,9 +155,15 @@ public class HybridCodeExecutionService {
     }
 
     private CodeExecutionResponse executeWithTestCasesJobe(String code, String language, List<TestCase> testCases, Submission submission, Question question) {
+        // If question parameter is provided, we need code wrapping capabilities which JOBE doesn't support
+        // Always fall back to local execution for programming assignments with function-only code
+        if (question != null) {
+            log.info("Question parameter provided, falling back to local execution for code wrapping support");
+            return localCodeExecutionService.executeCodeWithTestCases(code, language, testCases, submission, question);
+        }
+        
         try {
-            // For now, use existing service without question parameter 
-            // TODO: Update JobeExecutionService to support question parameter
+            // For simple code execution without wrapping needs
             return jobeExecutionService.executeCodeWithTestCases(code, language, testCases, submission);
         } catch (Exception e) {
             log.warn("Jobe execution with test cases failed, falling back to local: {}", e.getMessage());

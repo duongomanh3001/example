@@ -267,8 +267,13 @@ public class StudentDashboardService {
             // Enhanced fields for programming questions
             null, // starterCode - not available in Question entity, should be provided separately
             publicTestCases, // exampleTestCases (same as publicTestCases)
-            "java", // language - default to java, should be configurable per question
-            totalTestCases // totalTestCases
+            question.getProgrammingLanguage() != null ? question.getProgrammingLanguage() : "c", // Use question's programming language or default to C
+            totalTestCases, // totalTestCases
+            // Enhanced grading fields (public information only)
+            question.getFunctionName(), // functionName from question
+            question.getFunctionSignature(), // functionSignature from question
+            question.getProgrammingLanguage() != null ? question.getProgrammingLanguage() : "c", // Use question's programming language
+            question.getReferenceImplementation() != null // hasReferenceImplementation
         );
     }
     

@@ -3,6 +3,7 @@ package iuh.fit.cscore_be.service;
 import iuh.fit.cscore_be.dto.response.CodeExecutionResponse;
 import iuh.fit.cscore_be.dto.response.TestResultResponse;
 import iuh.fit.cscore_be.entity.Assignment;
+import iuh.fit.cscore_be.entity.Question;
 import iuh.fit.cscore_be.entity.Submission;
 import iuh.fit.cscore_be.entity.TestCase;
 import iuh.fit.cscore_be.entity.TestResult;
@@ -114,9 +115,11 @@ public class CodeExecutionService {
         // Apply code wrapping if question is provided and code doesn't have main function
         String executableCode = code;
         if (question != null) {
+            log.debug("Original student code:\n{}", code);
             executableCode = codeWrapperService.wrapFunctionCode(code, question, language);
             if (!executableCode.equals(code)) {
                 log.info("Applied code wrapping for question {} in language {}", question.getId(), language);
+                log.debug("Wrapped code:\n{}", executableCode);
             }
         }
         
@@ -216,7 +219,11 @@ public class CodeExecutionService {
         try {
             long startTime = System.currentTimeMillis();
             
-            String output = executeCodeWithInput(code, language, testCase.getInput(), workDir, testCase.getTimeLimit());
+            // Preprocess input to handle escaped quotes and formatting
+            String processedInput = preprocessTestInput(testCase.getInput());
+            log.debug("Original input: '{}', Processed input: '{}'", testCase.getInput(), processedInput);
+            
+            String output = executeCodeWithInput(code, language, processedInput, workDir, testCase.getTimeLimit());
             
             long executionTime = System.currentTimeMillis() - startTime;
             result.setExecutionTime(executionTime);
@@ -239,6 +246,31 @@ public class CodeExecutionService {
         }
         
         return result;
+    }
+
+    /**
+     * Preprocess test input to handle escaped quotes and proper formatting
+     */
+    private String preprocessTestInput(String input) {
+        if (input == null) return "";
+        
+        // Handle escaped quotes in JSON-like format
+        String processed = input;
+        
+        // If input starts and ends with quotes, remove outer quotes
+        if (processed.startsWith("\"") && processed.endsWith("\"") && processed.length() > 1) {
+            processed = processed.substring(1, processed.length() - 1);
+        }
+        
+        // Replace escaped quotes with actual quotes
+        processed = processed.replace("\\\"", "\"");
+        
+        // Handle other common escape sequences
+        processed = processed.replace("\\\\", "\\");
+        processed = processed.replace("\\n", "\n");
+        processed = processed.replace("\\t", "\t");
+        
+        return processed;
     }
 
     private void saveTestResult(Submission submission, TestCase testCase, TestResultResponse testResult) {

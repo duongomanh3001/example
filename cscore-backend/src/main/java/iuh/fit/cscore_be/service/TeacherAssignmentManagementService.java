@@ -186,6 +186,7 @@ public class TeacherAssignmentManagementService {
         assignment.setEndTime(request.getEndTime());
         assignment.setAllowLateSubmission(request.getAllowLateSubmission());
         assignment.setAutoGrade(request.getAutoGrade());
+        assignment.setProgrammingLanguages(request.getProgrammingLanguages());
         assignment.setIsActive(true);
         return assignment;
     }
@@ -218,6 +219,9 @@ public class TeacherAssignmentManagementService {
         if (request.getAutoGrade() != null) {
             assignment.setAutoGrade(request.getAutoGrade());
         }
+        if (request.getProgrammingLanguages() != null) {
+            assignment.setProgrammingLanguages(request.getProgrammingLanguages());
+        }
     }
     
     private DetailedAssignmentResponse mapToDetailedAssignmentResponse(Assignment assignment) {
@@ -234,6 +238,7 @@ public class TeacherAssignmentManagementService {
         response.setIsActive(assignment.getIsActive());
         response.setAllowLateSubmission(assignment.getAllowLateSubmission());
         response.setAutoGrade(assignment.getAutoGrade());
+        response.setProgrammingLanguages(assignment.getProgrammingLanguages());
         response.setCreatedAt(assignment.getCreatedAt());
         response.setUpdatedAt(assignment.getUpdatedAt());
         
@@ -262,6 +267,7 @@ public class TeacherAssignmentManagementService {
         response.setStartTime(assignment.getStartTime());
         response.setEndTime(assignment.getEndTime());
         response.setIsActive(assignment.getIsActive());
+        response.setProgrammingLanguages(assignment.getProgrammingLanguages());
         response.setCreatedAt(assignment.getCreatedAt());
         response.setUpdatedAt(assignment.getUpdatedAt());
         

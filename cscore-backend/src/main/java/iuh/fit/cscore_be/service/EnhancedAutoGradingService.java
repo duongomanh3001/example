@@ -353,29 +353,21 @@ public class EnhancedAutoGradingService {
         
         program.append("int main() {\n");
         
-        // For countCharacter function, we need to set up the test properly
+        // Parse the test case input properly
         String input = testCase.getInput().trim();
-        String[] params = parseInputParameters(input, question.getFunctionSignature());
+        log.debug("Parsing input: '{}' for question: {}", input, question.getFunctionName());
         
-        if (params.length >= 2) {
-            // Handle string parameter (remove quotes and create char array)
-            String stringParam = params[0];
-            if (stringParam.startsWith("\"") && stringParam.endsWith("\"")) {
-                stringParam = stringParam.substring(1, stringParam.length() - 1);
-            }
+        // Handle countCharacter and similar functions with string + char parameters
+        if (isStringCharFunction(question.getFunctionName(), question.getFunctionSignature())) {
+            ParsedInputParams params = parseStringCharInput(input);
             
-            // Handle character parameter (remove quotes)
-            String charParam = params[1];
-            if (charParam.startsWith("'") && charParam.endsWith("'")) {
-                charParam = charParam.substring(1, charParam.length() - 1);
-            }
-            
-            program.append("    char data[] = \"").append(stringParam).append("\";\n");
-            program.append("    char key = '").append(charParam).append("';\n");
-            program.append("    cout << ").append(question.getFunctionName()).append("(data, key) << endl;\n");
+            program.append("    char data[] = \"").append(escapeString(params.stringValue)).append("\";\n");
+            program.append("    char key = '").append(params.charValue).append("';\n");
+            program.append("    cout << ").append(question.getFunctionName()).append("(data, key);\n");
         } else {
-            // Fallback to original method
-            String functionCall = generateFunctionCall(testCase, question);
+            // For other function types, use generic parsing
+            String[] params = parseInputParameters(input, question.getFunctionSignature());
+            String functionCall = generateDirectFunctionCall(question.getFunctionName(), params, "cpp");
             program.append("    ").append(functionCall).append("\n");
         }
         
@@ -481,6 +473,107 @@ public class EnhancedAutoGradingService {
             params[i] = params[i].trim();
         }
         return params;
+    }
+
+    /**
+     * Check if function is a string + character function
+     */
+    private boolean isStringCharFunction(String functionName, String functionSignature) {
+        if (functionName != null && functionName.toLowerCase().contains("countcharacter")) {
+            return true;
+        }
+        
+        if (functionSignature != null) {
+            String normalized = functionSignature.toLowerCase().replaceAll("\\s+", " ");
+            return normalized.contains("char") && (normalized.contains("[]") || normalized.contains("*"));
+        }
+        
+        return false;
+    }
+
+    /**
+     * Parse input specifically for string + character functions
+     */
+    private ParsedInputParams parseStringCharInput(String input) {
+        ParsedInputParams result = new ParsedInputParams();
+        
+        if (input == null || input.trim().isEmpty()) {
+            result.stringValue = "";
+            result.charValue = ' ';
+            return result;
+        }
+        
+        input = input.trim();
+        
+        // Find the last space to separate string and character
+        int lastSpace = input.lastIndexOf(' ');
+        
+        if (lastSpace == -1) {
+            // No space found, treat as single character
+            result.stringValue = "";
+            result.charValue = input.length() > 0 ? input.charAt(0) : ' ';
+            return result;
+        }
+        
+        String stringPart = input.substring(0, lastSpace).trim();
+        String charPart = input.substring(lastSpace + 1).trim();
+        
+        // Parse string part
+        if (stringPart.equals("\"\"")) {
+            result.stringValue = "";
+        } else if (stringPart.equals("\\\"\\\"")) {
+            // Handle escaped empty string
+            result.stringValue = "";
+        } else if (stringPart.startsWith("\"") && stringPart.endsWith("\"") && stringPart.length() >= 2) {
+            // Remove surrounding quotes
+            result.stringValue = stringPart.substring(1, stringPart.length() - 1);
+        } else {
+            // No quotes, use as-is
+            result.stringValue = stringPart;
+        }
+        
+        // Parse character part
+        result.charValue = charPart.length() > 0 ? charPart.charAt(0) : ' ';
+        
+        return result;
+    }
+
+    /**
+     * Escape string for C/C++ code generation
+     */
+    private String escapeString(String str) {
+        if (str == null) return "";
+        
+        return str.replace("\\", "\\\\")
+                  .replace("\"", "\\\"")
+                  .replace("\n", "\\n")
+                  .replace("\t", "\\t");
+    }
+
+    /**
+     * Generate direct function call
+     */
+    private String generateDirectFunctionCall(String functionName, String[] params, String language) {
+        StringBuilder call = new StringBuilder();
+        
+        if ("cpp".equalsIgnoreCase(language) || "c".equalsIgnoreCase(language)) {
+            call.append("cout << ").append(functionName).append("(");
+            for (int i = 0; i < params.length; i++) {
+                if (i > 0) call.append(", ");
+                call.append(params[i]);
+            }
+            call.append(");");
+        }
+        
+        return call.toString();
+    }
+
+    /**
+     * Helper class for parsed input parameters
+     */
+    private static class ParsedInputParams {
+        String stringValue = "";
+        char charValue = ' ';
     }
 
     /**
@@ -649,7 +742,7 @@ public class EnhancedAutoGradingService {
                 TestResult testResult = new TestResult();
                 testResult.setSubmission(submission);
                 testResult.setTestCase(getTestCaseById(testResultResponse.getTestCaseId()));
-                testResult.setPassed(testResultResponse.isPassed());
+                testResult.setIsPassed(testResultResponse.isPassed());
                 testResult.setActualOutput(testResultResponse.getActualOutput());
                 testResult.setExecutionTime(testResultResponse.getExecutionTime());
                 testResult.setMemoryUsed(0L); // Set default or from response if available

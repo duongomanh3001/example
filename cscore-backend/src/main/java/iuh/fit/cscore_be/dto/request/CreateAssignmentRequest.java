@@ -1,6 +1,7 @@
 package iuh.fit.cscore_be.dto.request;
 
 import iuh.fit.cscore_be.enums.AssignmentType;
+import iuh.fit.cscore_be.enums.ProgrammingLanguage;
 import jakarta.validation.constraints.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -8,6 +9,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 
 @Data
 @NoArgsConstructor
@@ -45,6 +47,8 @@ public class CreateAssignmentRequest {
     private Boolean allowLateSubmission = false;
     
     private Boolean autoGrade = true;
+    
+    private Set<ProgrammingLanguage> programmingLanguages;
     
     private List<CreateQuestionRequest> questions;
 }

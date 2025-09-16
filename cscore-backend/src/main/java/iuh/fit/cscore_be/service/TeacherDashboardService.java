@@ -143,6 +143,7 @@ public class TeacherDashboardService {
             assignment.getIsActive(),
             assignment.getAllowLateSubmission(),
             assignment.getAutoGrade(),
+            assignment.getProgrammingLanguages(),
             submissionCount,
             pendingCount,
             totalQuestions,

@@ -278,8 +278,27 @@ class AssignmentServiceClass {
 
   // Teacher-specific code validation for answer checking
   async validateAnswerCode(answerCode: string, testCode: string, language: string = 'c', input?: string): Promise<CodeExecutionResponse> {
-    // Combine the answer code with the test code for execution
-    const combinedCode = `#include <stdio.h>\n#include <string.h>\n\n${answerCode}\n\nint main() {\n    ${testCode}\n    return 0;\n}`;
+    // Generate language-specific wrapper code
+    let combinedCode: string;
+    
+    switch (language.toLowerCase()) {
+      case 'c':
+        combinedCode = `#include <stdio.h>\n#include <string.h>\n\n${answerCode}\n\nint main() {\n    ${testCode}\n    return 0;\n}`;
+        break;
+      case 'cpp':
+      case 'c++':
+        combinedCode = `#include <iostream>\n#include <string>\n#include <cstring>\nusing namespace std;\n\n${answerCode}\n\nint main() {\n    ${testCode}\n    return 0;\n}`;
+        break;
+      case 'python':
+        combinedCode = `${answerCode}\n\n${testCode}`;
+        break;
+      case 'java':
+        combinedCode = `public class Solution {\n    ${answerCode}\n    \n    public static void main(String[] args) {\n        Solution solution = new Solution();\n        ${testCode}\n    }\n}`;
+        break;
+      default:
+        // Default to C for backward compatibility
+        combinedCode = `#include <stdio.h>\n#include <string.h>\n\n${answerCode}\n\nint main() {\n    ${testCode}\n    return 0;\n}`;
+    }
     
     console.log('Sending code to backend:', {
       combinedCode,

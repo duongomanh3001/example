@@ -1,3 +1,13 @@
+export enum ProgrammingLanguage {
+  JAVA = 'JAVA',
+  PYTHON = 'PYTHON', 
+  CPP = 'CPP',
+  C = 'C',
+  JAVASCRIPT = 'JAVASCRIPT'
+}
+
+export type QuestionType = 'PROGRAMMING' | 'MULTIPLE_CHOICE' | 'ESSAY' | 'TRUE_FALSE';
+
 export interface CourseResponse {
   id: number;
   name: string;
@@ -75,6 +85,7 @@ export interface CreateAssignmentRequest {
   endTime?: string;
   allowLateSubmission?: boolean;
   autoGrade?: boolean;
+  programmingLanguages?: ProgrammingLanguage[];
   questions?: CreateQuestionRequest[];
 }
 
@@ -143,6 +154,7 @@ export interface AssignmentResponse {
   isActive: boolean;
   allowLateSubmission: boolean;
   autoGrade: boolean;
+  programmingLanguages?: ProgrammingLanguage[];
   submissionCount: number;
   pendingCount: number;
   totalQuestions: number;

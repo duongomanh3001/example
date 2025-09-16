@@ -5,7 +5,7 @@ import { withAuth } from "@/components/hoc/withAuth";
 import { Role } from "@/types/auth";
 import { CourseService } from "@/services/course.service";
 import { AssignmentService } from "@/services/assignment.service";
-import { CourseResponse, CreateAssignmentRequest, TestCaseRequest } from "@/types/api";
+import { CourseResponse, CreateAssignmentRequest, TestCaseRequest, ProgrammingLanguage, QuestionType } from "@/types/api";
 import MainLayout from "@/components/layouts/MainLayout";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -14,7 +14,7 @@ interface Question {
   id?: number;
   title: string;
   description: string;
-  questionType: 'PROGRAMMING' | 'MULTIPLE_CHOICE' | 'ESSAY' | 'TRUE_FALSE';
+  questionType: QuestionType;
   points: number;
   orderIndex: number;
   testCases: EnhancedTestCase[];
@@ -23,6 +23,11 @@ interface Question {
   answerCode?: string; // Lecturer's solution code
   starterCode?: string; // Template code for students with //TODO
   validateOnSave?: boolean; // Auto-generate expected outputs
+  programmingLanguage?: string; // Programming language for this question
+  // Enhanced grading fields
+  functionName?: string;
+  functionSignature?: string;
+  testTemplate?: string;
 }
 
 interface EnhancedTestCase extends TestCaseRequest {
@@ -61,6 +66,36 @@ function QuestionEditor({
   onDeleteOption,
   onValidateAnswer
 }: QuestionEditorProps) {
+  
+  const getAnswerCodePlaceholder = (language: string = 'c') => {
+    switch (language) {
+      case 'c':
+        return 'int countCharacter(const char str[], char key)\n{\n\tint count = 0;\n\tfor (int i = 0; str[i] != \'\\0\'; i++)\n\t{\n\t\tif(str[i] == key)\n\t\t\tcount++;\n\t}\n\treturn count;\n}';
+      case 'cpp':
+        return 'int countCharacter(const char str[], char key)\n{\n\tint count = 0;\n\tfor (int i = 0; str[i] != \'\\0\'; i++)\n\t{\n\t\tif(str[i] == key)\n\t\t\tcount++;\n\t}\n\treturn count;\n}';
+      case 'java':
+        return 'public int countCharacter(String str, char key) {\n\tint count = 0;\n\tfor (int i = 0; i < str.length(); i++) {\n\t\tif (str.charAt(i) == key) {\n\t\t\tcount++;\n\t\t}\n\t}\n\treturn count;\n}';
+      case 'python':
+        return 'def countCharacter(s, key):\n\tcount = 0\n\tfor ch in s:\n\t\tif ch == key:\n\t\t\tcount += 1\n\treturn count';
+      default:
+        return '';
+    }
+  };
+
+  const getStarterCodePlaceholder = (language: string = 'c') => {
+    switch (language) {
+      case 'c':
+        return 'int countCharacter(const char str[], char key)\n{\n\t// TODO: Implement this function\n\treturn 0;\n}';
+      case 'cpp':
+        return 'int countCharacter(const char str[], char key)\n{\n\t// TODO: Implement this function\n\treturn 0;\n}';
+      case 'java':
+        return 'public int countCharacter(String str, char key) {\n\t// TODO: Implement this function\n\treturn 0;\n}';
+      case 'python':
+        return 'def countCharacter(s, key):\n\t# TODO: Implement this function\n\treturn 0';
+      default:
+        return '';
+    }
+  };
   return (
     <div className="space-y-6">
       {/* Question Basic Info */}
@@ -136,6 +171,21 @@ function QuestionEditor({
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-slate-900">Đáp án (Answer)</h3>
               <div className="flex items-center gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">
+                    Ngôn ngữ
+                  </label>
+                  <select
+                    value={question.programmingLanguage || 'c'}
+                    onChange={(e) => onUpdate({ programmingLanguage: e.target.value })}
+                    className="border border-slate-300 rounded-md px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-[#ff6a00]"
+                  >
+                    <option value="c">C</option>
+                    <option value="cpp">C++</option>
+                    <option value="java">Java</option>
+                    <option value="python">Python</option>
+                  </select>
+                </div>
                 <label className="flex items-center gap-2">
                   <input
                     type="checkbox"
@@ -165,7 +215,7 @@ function QuestionEditor({
                 onChange={(e) => onUpdate({ answerCode: e.target.value })}
                 rows={8}
                 className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#ff6a00] font-mono"
-                placeholder="// Ví dụ: function countCharacter(str, key) {&#10;//   let count = 0;&#10;//   for(let i = 0; i < str.length; i++) {&#10;//     if(str[i] === key) count++;&#10;//   }&#10;//   return count;&#10;// }"
+                placeholder={getAnswerCodePlaceholder(question.programmingLanguage)}
               />
             </div>
           </div>
@@ -182,7 +232,7 @@ function QuestionEditor({
                 onChange={(e) => onUpdate({ starterCode: e.target.value })}
                 rows={6}
                 className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#ff6a00] font-mono"
-                placeholder="// Mã mẫu cho sinh viên&#10;function countCharacter(str, key) {&#10;  // TODO: Implement this function&#10;}"
+                placeholder={getStarterCodePlaceholder(question.programmingLanguage)}
               />
             </div>
           </div>
@@ -452,6 +502,7 @@ function CreateAssignmentPage() {
     endTime: '',
     allowLateSubmission: false,
     autoGrade: true,
+    programmingLanguages: [] as ProgrammingLanguage[],
   });
 
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -566,7 +617,7 @@ function CreateAssignmentPage() {
             const result = await AssignmentService.validateAnswerCode(
               question.answerCode,
               testCase.testCode,
-              'c', // Default to C language, can be made configurable
+              question.programmingLanguage || 'c', // Use question's language or default to C
               testCase.input
             );
             
@@ -676,6 +727,7 @@ function CreateAssignmentPage() {
         maxScore: totalScore || formData.maxScore,
         startTime: formData.startTime || undefined,
         endTime: formData.endTime || undefined,
+        programmingLanguages: formData.programmingLanguages.length > 0 ? formData.programmingLanguages : undefined,
         questions: questions.map(q => ({
           title: q.title,
           description: q.description,
@@ -687,7 +739,13 @@ function CreateAssignmentPage() {
             optionText: opt.optionText,
             isCorrect: opt.isCorrect,
             orderIndex: opt.orderIndex
-          }))
+          })),
+          // Enhanced grading fields for programming questions
+          referenceImplementation: q.answerCode,
+          functionName: q.functionName,
+          functionSignature: q.functionSignature,
+          programmingLanguage: q.programmingLanguage,
+          testTemplate: q.testTemplate
         }))
       };
 
@@ -710,6 +768,28 @@ function CreateAssignmentPage() {
       [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : 
               type === 'number' ? parseInt(value) : value
     }));
+  };
+
+  const handleProgrammingLanguageChange = (language: ProgrammingLanguage, checked: boolean) => {
+    setFormData(prev => {
+      const currentLanguages = prev.programmingLanguages;
+      if (checked) {
+        // Add language if not already present
+        if (!currentLanguages.includes(language)) {
+          return {
+            ...prev,
+            programmingLanguages: [...currentLanguages, language]
+          };
+        }
+      } else {
+        // Remove language
+        return {
+          ...prev,
+          programmingLanguages: currentLanguages.filter(lang => lang !== language)
+        };
+      }
+      return prev;
+    });
   };
 
   return (
@@ -812,7 +892,7 @@ function CreateAssignmentPage() {
                       />
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mt-6">
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-2">
                           Loại bài tập *
@@ -829,6 +909,40 @@ function CreateAssignmentPage() {
                           <option value="PROJECT">Dự án</option>
                           <option value="QUIZ">Kiểm tra nhanh</option>
                         </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-2">
+                          Ngôn ngữ lập trình được phép
+                        </label>
+                        <div className="space-y-2">
+                          {Object.values(ProgrammingLanguage).map((language) => {
+                            const languageLabels = {
+                              [ProgrammingLanguage.C]: 'C',
+                              [ProgrammingLanguage.CPP]: 'C++',
+                              [ProgrammingLanguage.JAVA]: 'Java',
+                              [ProgrammingLanguage.PYTHON]: 'Python',
+                              [ProgrammingLanguage.JAVASCRIPT]: 'JavaScript'
+                            };
+                            
+                            return (
+                              <label key={language} className="flex items-center">
+                                <input
+                                  type="checkbox"
+                                  checked={formData.programmingLanguages.includes(language)}
+                                  onChange={(e) => handleProgrammingLanguageChange(language, e.target.checked)}
+                                  className="mr-2 text-[#ff6a00] focus:ring-[#ff6a00]"
+                                />
+                                <span className="text-sm text-slate-700">
+                                  {languageLabels[language]}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">
+                          Sinh viên sẽ chỉ có thể sử dụng những ngôn ngữ được chọn
+                        </p>
                       </div>
 
                       <div>

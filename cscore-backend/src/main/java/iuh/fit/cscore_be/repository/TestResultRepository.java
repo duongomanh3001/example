@@ -22,4 +22,6 @@ public interface TestResultRepository extends JpaRepository<TestResult, Long> {
     List<TestResult> findBySubmissionAndIsPassedFalse(Submission submission);
     
     Long countBySubmissionAndIsPassed(Submission submission, Boolean isPassed);
+    
+    void deleteBySubmissionId(Long submissionId);
 }

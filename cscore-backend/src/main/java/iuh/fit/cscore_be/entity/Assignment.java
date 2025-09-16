@@ -2,6 +2,7 @@ package iuh.fit.cscore_be.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import iuh.fit.cscore_be.enums.AssignmentType;
+import iuh.fit.cscore_be.enums.ProgrammingLanguage;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -10,6 +11,8 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.HashSet;
 
 @Entity
 @Table(name = "assignments")
@@ -60,6 +63,15 @@ public class Assignment {
     
     @Column(name = "auto_grade")
     private Boolean autoGrade = true;
+    
+    @ElementCollection(targetClass = ProgrammingLanguage.class)
+    @Enumerated(EnumType.STRING)
+    @CollectionTable(
+        name = "assignment_programming_languages",
+        joinColumns = @JoinColumn(name = "assignment_id")
+    )
+    @Column(name = "programming_language")
+    private Set<ProgrammingLanguage> programmingLanguages = new HashSet<>();
     
     @OneToMany(mappedBy = "assignment", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
     @JsonIgnore

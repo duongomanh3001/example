@@ -34,6 +34,13 @@ public class QuestionService {
         question.setOrderIndex(request.getOrderIndex());
         question.setAssignment(assignment);
         
+        // Set enhanced grading fields for programming questions
+        question.setReferenceImplementation(request.getReferenceImplementation());
+        question.setFunctionName(request.getFunctionName());
+        question.setFunctionSignature(request.getFunctionSignature());
+        question.setProgrammingLanguage(request.getProgrammingLanguage());
+        question.setTestTemplate(request.getTestTemplate());
+        
         Question savedQuestion = questionRepository.save(question);
         
         // Create test cases for PROGRAMMING questions

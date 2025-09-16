@@ -1,0 +1,703 @@
+package iuh.fit.cscore_be.service;
+
+import iuh.fit.cscore_be.dto.request.SubmissionRequest;
+import iuh.fit.cscore_be.dto.response.*;
+import iuh.fit.cscore_be.entity.*;
+import iuh.fit.cscore_be.enums.ProgrammingLanguage;
+import iuh.fit.cscore_be.enums.SubmissionStatus;
+import iuh.fit.cscore_be.repository.*;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
+
+@Service
+@RequiredArgsConstructor
+@Transactional
+@Slf4j
+public class StudentService {
+    
+    private final EnrollmentRepository enrollmentRepository;
+    private final AssignmentRepository assignmentRepository;
+    private final SubmissionRepository submissionRepository;
+    private final QuestionSubmissionRepository questionSubmissionRepository;
+    private final TestCaseRepository testCaseRepository;
+    private final TestResultRepository testResultRepository;
+    private final Judge0Service judge0Service;
+    private final CodeExecutionService codeExecutionService;
+    private final AutoGradingService autoGradingService;
+    private final CompilerService compilerService;
+    
+    public List<StudentAssignmentResponse> getAvailableAssignments(User student) {
+        List<Enrollment> enrollments = enrollmentRepository.findByStudentAndIsActiveTrue(student);
+        
+        return enrollments.stream()
+            .flatMap(enrollment -> {
+                List<Assignment> assignments = assignmentRepository.findByCourseAndIsActiveTrue(enrollment.getCourse());
+                
+                return assignments.stream()
+                    .filter(assignment -> this.isAssignmentAvailable(assignment))
+                    .map(assignment -> convertToStudentAssignmentResponse(assignment, student));
+            })
+            .sorted((a1, a2) -> {
+                // Sort by end time, then by start time
+                if (a1.getEndTime() != null && a2.getEndTime() != null) {
+                    return a1.getEndTime().compareTo(a2.getEndTime());
+                }
+                return a2.getCreatedAt().compareTo(a1.getCreatedAt());
+            })
+            .collect(Collectors.toList());
+    }
+    
+    public StudentAssignmentResponse getAssignmentDetails(Long assignmentId, User student) {
+        Assignment assignment = assignmentRepository.findById(assignmentId)
+            .orElseThrow(() -> new RuntimeException("Không tìm thấy bài tập"));
+        
+        // Check if student is enrolled in the course
+        boolean isEnrolled = enrollmentRepository.existsByStudentAndCourse(student, assignment.getCourse());
+        if (!isEnrolled) {
+            throw new RuntimeException("Bạn chưa đăng ký khóa học này");
+        }
+        
+        if (!isAssignmentAvailable(assignment)) {
+            throw new RuntimeException("Bài tập này hiện không khả dụng");
+        }
+        
+        StudentAssignmentResponse response = convertToStudentAssignmentResponse(assignment, student);
+        
+        // Add public test cases from all questions
+        List<TestCase> publicTestCases = assignment.getQuestions().stream()
+            .flatMap(question -> testCaseRepository.findByQuestionAndIsHiddenFalse(question).stream())
+            .collect(Collectors.toList());
+        List<PublicTestCaseResponse> publicTestCaseResponses = publicTestCases.stream()
+            .map(this::convertToPublicTestCaseResponse)
+            .collect(Collectors.toList());
+        response.setPublicTestCases(publicTestCaseResponses);
+        
+        return response;
+    }
+    
+    public CodeExecutionResponse runCode(String code, String languageStr, Long assignmentId, User student) {
+        Assignment assignment = assignmentRepository.findById(assignmentId)
+            .orElseThrow(() -> new RuntimeException("Không tìm thấy bài tập"));
+        
+        // Check if student is enrolled
+        boolean isEnrolled = enrollmentRepository.existsByStudentAndCourse(student, assignment.getCourse());
+        if (!isEnrolled) {
+            throw new RuntimeException("Bạn chưa đăng ký khóa học này");
+        }
+        
+        try {
+            // Use new CodeExecutionService instead of Judge0
+            return codeExecutionService.executeCode(code, languageStr);
+            
+        } catch (Exception e) {
+            CodeExecutionResponse response = new CodeExecutionResponse();
+            response.setSuccess(false);
+            response.setError("Lỗi thực thi code: " + e.getMessage());
+            return response;
+        }
+    }
+    
+    public CodeExecutionResponse runCodeWithInput(String code, String languageStr, Long assignmentId, User student, String input) {
+        Assignment assignment = assignmentRepository.findById(assignmentId)
+            .orElseThrow(() -> new RuntimeException("Không tìm thấy bài tập"));
+        
+        // Check if student is enrolled
+        boolean isEnrolled = enrollmentRepository.existsByStudentAndCourse(student, assignment.getCourse());
+        if (!isEnrolled) {
+            throw new RuntimeException("Bạn chưa đăng ký khóa học này");
+        }
+        
+        try {
+            // Use CodeExecutionService with input support
+            return codeExecutionService.executeCodeWithInput(code, languageStr, input);
+            
+        } catch (Exception e) {
+            CodeExecutionResponse response = new CodeExecutionResponse();
+            response.setSuccess(false);
+            response.setError("Lỗi thực thi code: " + e.getMessage());
+            return response;
+        }
+    }
+    
+    public CodeExecutionResponse compileAndRunCode(String code, String language) {
+        try {
+            return codeExecutionService.executeCode(code, language);
+        } catch (Exception e) {
+            CodeExecutionResponse response = new CodeExecutionResponse();
+            response.setSuccess(false);
+            response.setError("Lỗi thực thi code: " + e.getMessage());
+            return response;
+        }
+    }
+    
+    public CodeExecutionResponse testCodeWithPublicTestCases(String code, String language, Long assignmentId, User student) {
+        Assignment assignment = assignmentRepository.findById(assignmentId)
+            .orElseThrow(() -> new RuntimeException("Không tìm thấy bài tập"));
+        
+        // Check if student is enrolled
+        boolean isEnrolled = enrollmentRepository.existsByStudentAndCourse(student, assignment.getCourse());
+        if (!isEnrolled) {
+            throw new RuntimeException("Bạn chưa đăng ký khóa học này");
+        }
+        
+        try {
+            // Get only public test cases from all questions
+            List<TestCase> publicTestCases = assignment.getQuestions().stream()
+                .flatMap(question -> testCaseRepository.findByQuestionAndIsHiddenFalse(question).stream())
+                .collect(Collectors.toList());
+            
+            return codeExecutionService.executeCodeWithTestCases(code, language, publicTestCases, null);
+            
+        } catch (Exception e) {
+            CodeExecutionResponse response = new CodeExecutionResponse();
+            response.setSuccess(false);
+            response.setError("Lỗi thực thi test cases: " + e.getMessage());
+            return response;
+        }
+    }
+    
+    public SubmissionResponse submitAssignment(SubmissionRequest request, User student) {
+        Assignment assignment = assignmentRepository.findById(request.getAssignmentId())
+            .orElseThrow(() -> new RuntimeException("Không tìm thấy bài tập"));
+        
+        // Check if student is enrolled
+        boolean isEnrolled = enrollmentRepository.existsByStudentAndCourse(student, assignment.getCourse());
+        if (!isEnrolled) {
+            throw new RuntimeException("Bạn chưa đăng ký khóa học này");
+        }
+        
+        // Check if assignment is available for submission
+        if (!isAssignmentAvailable(assignment)) {
+            if (assignment.getEndTime() != null && LocalDateTime.now().isAfter(assignment.getEndTime())) {
+                if (!assignment.getAllowLateSubmission()) {
+                    throw new RuntimeException("Đã hết hạn nộp bài và không cho phép nộp muộn");
+                }
+            } else {
+                throw new RuntimeException("Bài tập này hiện không khả dụng để nộp");
+            }
+        }
+
+        try {
+            // Create or update main submission
+            Submission existingSubmission = submissionRepository.findByAssignmentAndStudent(assignment, student)
+                .orElse(null);
+            
+            Submission submission;
+            if (existingSubmission != null) {
+                submission = existingSubmission;
+                submission.setSubmissionTime(LocalDateTime.now());
+                submission.setStatus(SubmissionStatus.SUBMITTED);
+            } else {
+                submission = new Submission();
+                submission.setAssignment(assignment);
+                submission.setStudent(student);
+                submission.setStatus(SubmissionStatus.SUBMITTED);
+            }
+            
+            // Set late status if needed
+            if (assignment.getEndTime() != null && LocalDateTime.now().isAfter(assignment.getEndTime())) {
+                if (assignment.getAllowLateSubmission() == null || !assignment.getAllowLateSubmission()) {
+                    throw new RuntimeException("Bài tập đã hết hạn nộp và không cho phép nộp muộn");
+                }
+                submission.setStatus(SubmissionStatus.LATE);
+            }
+            
+            // Update submission metadata
+            List<Question> programmingQuestions = assignment.getQuestions().stream()
+                .filter(q -> q.getQuestionType() == iuh.fit.cscore_be.enums.QuestionType.PROGRAMMING)
+                .collect(Collectors.toList());
+            
+            submission.setTotalQuestions(assignment.getQuestions().size());
+            submission.setHasProgrammingQuestions(!programmingQuestions.isEmpty());
+            
+            // Save submission first
+            submission = submissionRepository.save(submission);
+            
+            // Handle different submission types
+            if (request.getCode() != null && !request.getCode().trim().isEmpty()) {
+                // Legacy single code submission - handle as before for backward compatibility
+                return handleLegacyCodeSubmission(request, submission);
+            } else if (request.getAnswers() != null && !request.getAnswers().isEmpty()) {
+                // New multi-question submission - handle each question separately
+                return handleMultiQuestionSubmission(request, submission, assignment);
+            } else {
+                throw new RuntimeException("Không có dữ liệu để nộp bài");
+            }
+            
+        } catch (Exception e) {
+            log.error("Error submitting assignment: ", e);
+            
+            SubmissionResponse response = new SubmissionResponse();
+            response.setSuccess(false);
+            response.setError("Lỗi khi nộp bài: " + e.getMessage());
+            return response;
+        }
+    }
+                
+                if (!testCases.isEmpty()) {
+                    // Grade synchronously to get immediate results
+                    Double score = autoGradingService.gradeSubmission(finalSubmission);
+                    log.info("Auto-grading completed for submission {} with score: {}", finalSubmission.getId(), score);
+                    
+                    // Refresh submission data from database to get updated results
+                    submission = submissionRepository.findById(finalSubmission.getId()).orElse(finalSubmission);
+                } else {
+                    log.warn("No test cases found for assignment {}, skipping auto-grading", finalSubmission.getAssignment().getId());
+                    finalSubmission.setStatus(SubmissionStatus.NO_TESTS);
+                    finalSubmission.setScore(0.0);
+                    finalSubmission.setFeedback("Bài tập này chưa có test case để chấm điểm tự động");
+                    finalSubmission.setGradedTime(LocalDateTime.now());
+                    submission = submissionRepository.save(finalSubmission);
+                }
+                
+            } catch (Exception e) {
+                log.error("Failed to auto-grade submission {}: {}", submission.getId(), e.getMessage());
+                submission.setStatus(SubmissionStatus.ERROR);
+                submission.setFeedback("Lỗi trong quá trình chấm điểm tự động: " + e.getMessage());
+                submission.setGradedTime(LocalDateTime.now());
+                submission = submissionRepository.save(submission);
+            }
+            
+            return convertToSubmissionResponse(submission);
+            
+        } catch (Exception e) {
+            throw new RuntimeException("Lỗi khi nộp bài: " + e.getMessage());
+        }
+    }
+    
+    public List<SubmissionResponse> getStudentSubmissions(User student) {
+        List<Submission> submissions = submissionRepository.findByStudent(student);
+        return submissions.stream()
+            .map(this::convertToSubmissionResponse)
+            .sorted((s1, s2) -> s2.getSubmissionTime().compareTo(s1.getSubmissionTime()))
+            .collect(Collectors.toList());
+    }
+    
+    public SubmissionResponse getSubmissionDetails(Long submissionId, User student) {
+        Submission submission = submissionRepository.findById(submissionId)
+            .orElseThrow(() -> new RuntimeException("Không tìm thấy bài nộp"));
+        
+        if (!submission.getStudent().getId().equals(student.getId())) {
+            throw new RuntimeException("Bạn không có quyền xem bài nộp này");
+        }
+        
+        return convertToSubmissionResponse(submission);
+    }
+    
+    private boolean isAssignmentAvailable(Assignment assignment) {
+        if (!assignment.getIsActive()) {
+            return false;
+        }
+        
+        LocalDateTime now = LocalDateTime.now();
+        
+        if (assignment.getStartTime() != null && now.isBefore(assignment.getStartTime())) {
+            return false;
+        }
+        
+        // Allow access even after end time if late submission is allowed
+        if (assignment.getEndTime() != null && now.isAfter(assignment.getEndTime())) {
+            return assignment.getAllowLateSubmission();
+        }
+        
+        return true;
+    }
+    
+    private StudentAssignmentResponse convertToStudentAssignmentResponse(Assignment assignment, User student) {
+        Submission submission = submissionRepository.findByAssignmentAndStudent(assignment, student)
+            .orElse(null);
+        
+        int totalQuestions = assignment.getQuestions().size();
+        
+        // Convert questions to student format
+        List<StudentQuestionResponse> questions = assignment.getQuestions().stream()
+            .sorted((q1, q2) -> q1.getOrderIndex().compareTo(q2.getOrderIndex())) // Sort by orderIndex
+            .map(question -> convertToStudentQuestionResponse(question, student))
+            .collect(Collectors.toList());
+        
+        StudentAssignmentResponse response = new StudentAssignmentResponse(
+            assignment.getId(),
+            assignment.getTitle(),
+            assignment.getDescription(),
+            assignment.getRequirements(),
+            assignment.getType(),
+            assignment.getCourse().getId(),
+            assignment.getCourse().getName(),
+            assignment.getMaxScore(),
+            assignment.getTimeLimit(),
+            assignment.getStartTime(),
+            assignment.getEndTime(),
+            assignment.getAllowLateSubmission(),
+            submission != null,
+            submission != null ? submission.getScore() : null,
+            submission != null ? submission.getSubmissionTime() : null,
+            submission != null ? submission.getStatus().name() : null,
+            null, // publicTestCases - will be set separately if needed
+            totalQuestions, // totalQuestions - NEW field for frontend
+            assignment.getQuestions().stream().mapToInt(q -> q.getTestCases().size()).sum(), // totalTestCases
+            questions, // Add questions list
+            assignment.getCreatedAt()
+        );
+        
+        return response;
+    }
+    
+    private StudentQuestionResponse convertToStudentQuestionResponse(Question question, User student) {
+        // Get public test cases for this question
+        List<PublicTestCaseResponse> publicTestCases = testCaseRepository.findByQuestionAndIsHiddenFalse(question)
+            .stream()
+            .map(this::convertToPublicTestCaseResponse)
+            .collect(Collectors.toList());
+        
+        // Get question options (for multiple choice questions)
+        List<QuestionOptionResponse> options = question.getQuestionOptions()
+            .stream()
+            .sorted((o1, o2) -> o1.getOptionOrder().compareTo(o2.getOptionOrder()))
+            .map(option -> new QuestionOptionResponse(
+                option.getId(),
+                option.getOptionText(),
+                option.getOptionOrder()
+            ))
+            .collect(Collectors.toList());
+        
+        // Check if student has answered this question (you might need to implement this logic)
+        // For now, we'll default to false
+        boolean isAnswered = false;
+        String userAnswer = null;
+        List<Long> selectedOptionIds = new ArrayList<>();
+        
+        // TODO: Check from submissions if this question has been answered
+        // This would require checking the submission answers for this specific question
+        
+        return new StudentQuestionResponse(
+            question.getId(),
+            question.getTitle(),
+            question.getDescription(),
+            question.getQuestionType(),
+            question.getPoints(),
+            question.getOrderIndex(),
+            publicTestCases,
+            options,
+            isAnswered,
+            userAnswer,
+            selectedOptionIds
+        );
+    }
+
+    private PublicTestCaseResponse convertToPublicTestCaseResponse(TestCase testCase) {
+        return new PublicTestCaseResponse(
+            testCase.getId(),
+            testCase.getInput(),
+            testCase.getExpectedOutput(),
+            testCase.getWeight()
+        );
+    }
+
+    private SubmissionResponse convertToSubmissionResponse(Submission submission) {
+        int totalTestCases = submission.getAssignment().getQuestions().stream()
+            .mapToInt(q -> q.getTestCases().size()).sum();
+        int testCasesPassed = (int) submission.getTestResults().stream()
+            .mapToLong(result -> result.getIsPassed() ? 1 : 0)
+            .sum();
+        
+        return new SubmissionResponse(
+            submission.getId(),
+            submission.getAssignment().getTitle(),
+            submission.getStudent().getFullName(),
+            submission.getStudent().getStudentId(),
+            submission.getProgrammingLanguage(),
+            submission.getStatus(),
+            submission.getScore(),
+            submission.getExecutionTime(),
+            submission.getMemoryUsed(),
+            submission.getFeedback(),
+            submission.getSubmissionTime(),
+            submission.getGradedTime(),
+            testCasesPassed,
+            totalTestCases
+        );
+    }
+
+    /**
+     * Handle legacy single code submission (backward compatibility)
+     */
+    private SubmissionResponse handleLegacyCodeSubmission(SubmissionRequest request, Submission submission) {
+        // Validate programming language support
+        String programmingLanguage = request.getProgrammingLanguage();
+        if (programmingLanguage == null || programmingLanguage.trim().isEmpty()) {
+            throw new RuntimeException("Vui lòng chọn ngôn ngữ lập trình");
+        }
+        
+        try {
+            ProgrammingLanguage langEnum = ProgrammingLanguage.valueOf(programmingLanguage.toUpperCase());
+            if (!compilerService.isLanguageSupported(langEnum)) {
+                throw new RuntimeException("Ngôn ngữ lập trình " + programmingLanguage + " không được hỗ trợ trên hệ thống này");
+            }
+        } catch (IllegalArgumentException e) {
+            throw new RuntimeException("Ngôn ngữ lập trình " + programmingLanguage + " không hợp lệ. Các ngôn ngữ được hỗ trợ: JAVA, PYTHON, C, CPP");
+        }
+        
+        // Update submission with legacy code
+        submission.setCode(request.getCode());
+        submission.setProgrammingLanguage(programmingLanguage);
+        submission = submissionRepository.save(submission);
+        
+        // Run auto-grading on combined code
+        try {
+            log.info("Starting legacy auto-grading for submission {}", submission.getId());
+            
+            // Check if assignment has test cases
+            List<TestCase> testCases = submission.getAssignment().getQuestions().stream()
+                .flatMap(question -> question.getTestCases().stream())
+                .toList();
+            
+            if (testCases.isEmpty()) {
+                log.warn("No test cases found for assignment {}", submission.getAssignment().getId());
+                submission.setStatus(SubmissionStatus.NO_TESTS);
+                submission.setScore(0.0);
+                submission.setFeedback("Không có test cases để chấm điểm.");
+                submissionRepository.save(submission);
+            } else {
+                // Run auto-grading
+                AutoGradingResponse gradingResult = autoGradingService.gradeSubmission(submission, testCases);
+                
+                // Update submission with grading results
+                submission.setScore(gradingResult.getTotalScore());
+                submission.setStatus(gradingResult.getStatus());
+                submission.setFeedback(gradingResult.getFeedback());
+                submission.setGradedTime(LocalDateTime.now());
+                submission.setExecutionTime(gradingResult.getTotalExecutionTime());
+                submission.setMemoryUsed(gradingResult.getMaxMemoryUsed());
+                
+                submissionRepository.save(submission);
+                log.info("Legacy auto-grading completed for submission {}: score={}, status={}", 
+                    submission.getId(), submission.getScore(), submission.getStatus());
+            }
+            
+            // Return success response
+            SubmissionResponse response = new SubmissionResponse();
+            response.setSuccess(true);
+            response.setSubmissionId(submission.getId());
+            response.setStatus(submission.getStatus());
+            response.setScore(submission.getScore());
+            response.setFeedback(submission.getFeedback());
+            response.setMessage("Nộp bài thành công!");
+            
+            return response;
+            
+        } catch (Exception e) {
+            log.error("Legacy auto-grading failed for submission {}: ", submission.getId(), e);
+            
+            submission.setStatus(SubmissionStatus.ERROR);
+            submission.setScore(0.0);
+            submission.setFeedback("Lỗi hệ thống khi chấm điểm: " + e.getMessage());
+            submissionRepository.save(submission);
+            
+            SubmissionResponse response = new SubmissionResponse();
+            response.setSuccess(false);
+            response.setError("Lỗi thực thi test cases: " + e.getMessage());
+            return response;
+        }
+    }
+
+    /**
+     * Handle multi-question submission (new approach)
+     */
+    private SubmissionResponse handleMultiQuestionSubmission(SubmissionRequest request, Submission submission, Assignment assignment) {
+        try {
+            List<Question> programmingQuestions = assignment.getQuestions().stream()
+                .filter(q -> q.getQuestionType() == iuh.fit.cscore_be.enums.QuestionType.PROGRAMMING)
+                .collect(Collectors.toList());
+            
+            int totalProgrammingQuestions = programmingQuestions.size();
+            int gradedQuestions = 0;
+            double totalScore = 0.0;
+            List<String> feedbacks = new ArrayList<>();
+            
+            // Process each question answer
+            for (var answerRequest : request.getAnswers()) {
+                Question question = assignment.getQuestions().stream()
+                    .filter(q -> q.getId().equals(answerRequest.getQuestionId()))
+                    .findFirst()
+                    .orElse(null);
+                
+                if (question == null) {
+                    log.warn("Question with id {} not found in assignment {}", answerRequest.getQuestionId(), assignment.getId());
+                    continue;
+                }
+                
+                // Handle programming questions
+                if (question.getQuestionType() == iuh.fit.cscore_be.enums.QuestionType.PROGRAMMING) {
+                    QuestionSubmission questionSubmission = handleProgrammingQuestionSubmission(
+                        submission, question, answerRequest.getAnswer(), answerRequest.getLanguage()
+                    );
+                    
+                    if (questionSubmission != null) {
+                        totalScore += questionSubmission.getScore();
+                        gradedQuestions++;
+                        
+                        if (questionSubmission.getFeedback() != null) {
+                            feedbacks.add("Câu " + question.getOrderIndex() + ": " + questionSubmission.getFeedback());
+                        }
+                    }
+                }
+                // Handle other question types (multiple choice, etc.) here if needed
+            }
+            
+            // Calculate final score and status
+            double finalScore = totalProgrammingQuestions > 0 ? (totalScore / totalProgrammingQuestions) : 0.0;
+            SubmissionStatus finalStatus = determineFinalStatus(gradedQuestions, totalProgrammingQuestions, finalScore);
+            
+            // Update main submission
+            submission.setScore(finalScore);
+            submission.setStatus(finalStatus);
+            submission.setCompletedQuestions(gradedQuestions);
+            submission.setFeedback(String.join("\n\n", feedbacks));
+            submission.setGradedTime(LocalDateTime.now());
+            
+            submissionRepository.save(submission);
+            
+            log.info("Multi-question submission completed for submission {}: score={}, status={}, graded={}/{}", 
+                submission.getId(), finalScore, finalStatus, gradedQuestions, totalProgrammingQuestions);
+            
+            // Return success response
+            SubmissionResponse response = new SubmissionResponse();
+            response.setSuccess(true);
+            response.setSubmissionId(submission.getId());
+            response.setStatus(finalStatus);
+            response.setScore(finalScore);
+            response.setFeedback(submission.getFeedback());
+            response.setMessage("Nộp bài thành công! Đã chấm " + gradedQuestions + "/" + totalProgrammingQuestions + " câu lập trình.");
+            
+            return response;
+            
+        } catch (Exception e) {
+            log.error("Multi-question submission failed for submission {}: ", submission.getId(), e);
+            
+            submission.setStatus(SubmissionStatus.ERROR);
+            submission.setScore(0.0);
+            submission.setFeedback("Lỗi hệ thống khi chấm điểm: " + e.getMessage());
+            submissionRepository.save(submission);
+            
+            SubmissionResponse response = new SubmissionResponse();
+            response.setSuccess(false);
+            response.setError("Lỗi khi xử lý nhiều câu hỏi: " + e.getMessage());
+            return response;
+        }
+    }
+
+    /**
+     * Handle individual programming question submission
+     */
+    private QuestionSubmission handleProgrammingQuestionSubmission(Submission submission, Question question, String code, String language) {
+        if (code == null || code.trim().isEmpty()) {
+            log.debug("No code provided for question {}", question.getId());
+            return null;
+        }
+        
+        try {
+            // Validate programming language
+            if (language == null || language.trim().isEmpty()) {
+                language = "C"; // Default fallback
+            }
+            
+            ProgrammingLanguage langEnum;
+            try {
+                langEnum = ProgrammingLanguage.valueOf(language.toUpperCase());
+                if (!compilerService.isLanguageSupported(langEnum)) {
+                    throw new RuntimeException("Ngôn ngữ lập trình " + language + " không được hỗ trợ");
+                }
+            } catch (IllegalArgumentException e) {
+                throw new RuntimeException("Ngôn ngữ lập trình " + language + " không hợp lệ");
+            }
+            
+            // Create or update question submission
+            QuestionSubmission questionSubmission = questionSubmissionRepository
+                .findBySubmissionAndQuestion(submission, question)
+                .orElse(new QuestionSubmission());
+            
+            questionSubmission.setSubmission(submission);
+            questionSubmission.setQuestion(question);
+            questionSubmission.setCode(code);
+            questionSubmission.setProgrammingLanguage(language);
+            questionSubmission.setStatus(SubmissionStatus.SUBMITTED);
+            
+            // Save question submission
+            questionSubmission = questionSubmissionRepository.save(questionSubmission);
+            
+            // Get test cases for this question
+            List<TestCase> testCases = testCaseRepository.findByQuestion(question);
+            
+            if (testCases.isEmpty()) {
+                log.warn("No test cases found for question {}", question.getId());
+                questionSubmission.setStatus(SubmissionStatus.NO_TESTS);
+                questionSubmission.setScore(0.0);
+                questionSubmission.setFeedback("Không có test cases để chấm điểm.");
+                return questionSubmissionRepository.save(questionSubmission);
+            }
+            
+            // Run auto-grading for this specific question
+            AutoGradingResponse gradingResult = autoGradingService.gradeQuestionSubmission(questionSubmission, testCases);
+            
+            // Update question submission with results
+            questionSubmission.setScore(gradingResult.getTotalScore());
+            questionSubmission.setStatus(gradingResult.getStatus());
+            questionSubmission.setFeedback(gradingResult.getFeedback());
+            questionSubmission.setGradedTime(LocalDateTime.now());
+            questionSubmission.setExecutionTime(gradingResult.getTotalExecutionTime());
+            questionSubmission.setMemoryUsed(gradingResult.getMaxMemoryUsed());
+            
+            questionSubmissionRepository.save(questionSubmission);
+            
+            log.info("Programming question {} graded for submission {}: score={}, status={}", 
+                question.getId(), submission.getId(), questionSubmission.getScore(), questionSubmission.getStatus());
+            
+            return questionSubmission;
+            
+        } catch (Exception e) {
+            log.error("Error grading programming question {} for submission {}: ", question.getId(), submission.getId(), e);
+            
+            QuestionSubmission errorSubmission = questionSubmissionRepository
+                .findBySubmissionAndQuestion(submission, question)
+                .orElse(new QuestionSubmission());
+            
+            errorSubmission.setSubmission(submission);
+            errorSubmission.setQuestion(question);
+            errorSubmission.setCode(code);
+            errorSubmission.setProgrammingLanguage(language);
+            errorSubmission.setStatus(SubmissionStatus.ERROR);
+            errorSubmission.setScore(0.0);
+            errorSubmission.setFeedback("Lỗi khi chấm điểm: " + e.getMessage());
+            
+            return questionSubmissionRepository.save(errorSubmission);
+        }
+    }
+
+    /**
+     * Determine final submission status based on individual question results
+     */
+    private SubmissionStatus determineFinalStatus(int gradedQuestions, int totalQuestions, double averageScore) {
+        if (gradedQuestions == 0) {
+            return SubmissionStatus.NO_TESTS;
+        }
+        
+        if (gradedQuestions < totalQuestions) {
+            return SubmissionStatus.PARTIAL;
+        }
+        
+        if (averageScore >= 80.0) {
+            return SubmissionStatus.PASSED;
+        } else if (averageScore > 0.0) {
+            return SubmissionStatus.FAILED;
+        } else {
+            return SubmissionStatus.ERROR;
+        }
+    }
+}

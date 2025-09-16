@@ -1,0 +1,72 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: rgb(25, 72, 102);
+  --primary-color: rgb(25, 72, 102);
+  --primary-hover: rgb(20, 58, 82);
+  --primary-light: rgb(33, 89, 125);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0f1419;
+    --foreground: #ffffff;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-open-sans), "Noto Sans Arabic", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+}
+
+/* Global text color - apply to headings and nav elements */
+h1, h2, h3, h4, h5, h6 {
+  color: rgb(25, 72, 102);
+}
+
+/* Override for specific elements that should remain white/light */
+.text-white, 
+.bg-white .text-white,
+.bg-primary *,
+button.bg-primary *, 
+.button-primary *,
+.text-light {
+  color: white !important;
+}
+
+/* Default text should remain readable */
+p, span, div, a, .text-primary {
+  color: rgb(25, 72, 102) !important;
+}
+
+/* Assignment links need better contrast */
+.assignment-link {
+  color: rgb(25, 72, 102) !important;
+}
+
+.assignment-link * {
+  color: rgb(25, 72, 102) !important;
+}
+
+/* Custom classes for the new color scheme */
+.text-primary {
+  color: rgb(25, 72, 102) !important;
+}
+
+.bg-primary {
+  background-color: rgb(25, 72, 102) !important;
+}
+
+.border-primary {
+  border-color: rgb(25, 72, 102) !important;
+}
+
+.hover\:bg-primary:hover {
+  background-color: rgb(20, 58, 82) !important;
+}
+
+.hover\:text-primary:hover {
+  color: rgb(25, 72, 102) !important;
+}

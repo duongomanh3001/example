@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  jobe-server:
+    image: trampgeek/jobeinabox
+    container_name: cscore-jobe-server
+    ports:
+      - "4000:80"
+    volumes:
+      - jobe_data:/var/www/html
+    environment:
+      - APACHE_RUN_USER=www-data
+      - APACHE_RUN_GROUP=www-data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/jobe/index.php/restapi/languages"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # Optional: Multiple Jobe instances for load balancing
+  jobe-server-2:
+    image: trampgeek/jobeinabox
+    container_name: cscore-jobe-server-2
+    ports:
+      - "4001:80"
+    volumes:
+      - jobe_data_2:/var/www/html
+    environment:
+      - APACHE_RUN_USER=www-data
+      - APACHE_RUN_GROUP=www-data
+    restart: unless-stopped
+    profiles:
+      - multi-instance
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/jobe/index.php/restapi/languages"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # Load balancer for multiple Jobe instances
+  nginx-lb:
+    image: nginx:alpine
+    container_name: cscore-jobe-lb
+    ports:
+      - "4002:80"
+    volumes:
+      - ./nginx-jobe-lb.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - jobe-server
+      - jobe-server-2
+    restart: unless-stopped
+    profiles:
+      - multi-instance
+
+volumes:
+  jobe_data:
+    driver: local
+  jobe_data_2:
+    driver: local
+
+networks:
+  default:
+    name: cscore-network

@@ -34,13 +34,14 @@ public class StudentService {
         log.info("Processing assignment submission for assignmentId: {}, studentId: {}", 
                 assignmentId, studentId);
 
-        // Validate assignment exists
-        Assignment assignment = assignmentRepository.findById(assignmentId)
-                .orElseThrow(() -> new RuntimeException("Assignment not found: " + assignmentId));
-                
-        // Get student user
-        User student = userRepository.findById(studentId)
-                .orElseThrow(() -> new RuntimeException("Student not found: " + studentId));
+        try {
+            // Validate assignment exists
+            Assignment assignment = assignmentRepository.findById(assignmentId)
+                    .orElseThrow(() -> new RuntimeException("Assignment not found: " + assignmentId));
+                    
+            // Get student user
+            User student = userRepository.findById(studentId)
+                    .orElseThrow(() -> new RuntimeException("Student not found: " + studentId));
 
         // Check if assignment is active
         if (!assignment.getIsActive()) {
@@ -83,56 +84,71 @@ public class StudentService {
         submission = submissionRepository.save(submission);
         log.info("Saved submission with ID: {}", submission.getId());
 
-        // Auto-grade if enabled
-        if (assignment.getAutoGrade()) {
-            try {
-                log.info("Starting enhanced auto-grading for submission: {}", submission.getId());
-                
-                // Check if any question has reference implementation for enhanced grading
-                boolean hasReferenceImplementation = assignment.getQuestions().stream()
-                    .anyMatch(q -> q.getReferenceImplementation() != null && 
-                                  !q.getReferenceImplementation().trim().isEmpty());
-                
-                if (hasReferenceImplementation) {
-                    log.info("Using enhanced grading (reference comparison) for submission: {}", submission.getId());
-                    enhancedAutoGradingService.performEnhancedGrading(submission);
-                } else {
-                    log.info("Using traditional grading (test case comparison) for submission: {}", submission.getId());
-                    autoGradingService.gradeSubmission(submission);
+            // Auto-grade if enabled
+            if (assignment.getAutoGrade()) {
+                try {
+                    log.info("Starting auto-grading for submission: {} (assignment: {})", submission.getId(), assignmentId);
+                    
+                    // Validate assignment has questions
+                    if (assignment.getQuestions() == null || assignment.getQuestions().isEmpty()) {
+                        log.warn("Assignment {} has no questions, skipping auto-grading", assignmentId);
+                        submission.setStatus(SubmissionStatus.SUBMITTED);
+                        submission.setFeedback("Bài tập chưa được cấu hình câu hỏi. Vui lòng liên hệ giáo viên.");
+                        submission = submissionRepository.save(submission);
+                    } else {
+                        // Check if any question has reference implementation for enhanced grading
+                        boolean hasReferenceImplementation = assignment.getQuestions().stream()
+                            .anyMatch(q -> q.getReferenceImplementation() != null && 
+                                          !q.getReferenceImplementation().trim().isEmpty());
+                        
+                        if (hasReferenceImplementation) {
+                            log.info("Using enhanced grading (reference comparison) for submission: {}", submission.getId());
+                            enhancedAutoGradingService.performEnhancedGrading(submission);
+                        } else {
+                            log.info("Using traditional grading (test case comparison) for submission: {}", submission.getId());
+                            autoGradingService.gradeSubmission(submission);
+                        }
+                        
+                        // Reload submission to get updated score
+                        submission = submissionRepository.findById(submission.getId())
+                                .orElse(submission);
+                        
+                        log.info("Auto-grading completed for submission: {}, final score: {}", 
+                                submission.getId(), submission.getScore());
+                    }
+                } catch (Exception e) {
+                    log.error("Auto-grading failed for submission: {}, error: {}", 
+                            submission.getId(), e.getMessage(), e);
+                    submission.setStatus(SubmissionStatus.COMPILATION_ERROR);
+                    submission.setFeedback("Lỗi chấm điểm tự động: " + e.getMessage());
+                    submission = submissionRepository.save(submission);
                 }
-                
-                // Reload submission to get updated score
-                submission = submissionRepository.findById(submission.getId())
-                        .orElse(submission);
-                
-                log.info("Auto-grading completed for submission: {}, final score: {}", 
-                        submission.getId(), submission.getScore());
-            } catch (Exception e) {
-                log.error("Auto-grading failed for submission: {}, error: {}", 
-                        submission.getId(), e.getMessage(), e);
-                submission.setStatus(SubmissionStatus.COMPILATION_ERROR);
-                submission.setFeedback("Lỗi biên dịch: " + e.getMessage());
-                submission = submissionRepository.save(submission);
             }
-        }
 
-        return new SubmissionResponse(
-                submission.getId(),
-                assignment.getId(),
-                assignment.getTitle(), // assignment title
-                student.getFullName(), // student name  
-                studentId.toString(), // student ID as string
-                submission.getProgrammingLanguage(), // programming language
-                submission.getStatus(),
-                submission.getScore(),
-                submission.getExecutionTime(), // execution time
-                submission.getMemoryUsed(), // memory used  
-                submission.getFeedback(), // feedback
-                submission.getSubmissionTime(), // submission time
-                submission.getGradedTime(), // graded time
-                null, // test cases passed
-                null  // total test cases
-        );
+            return new SubmissionResponse(
+                    submission.getId(),
+                    assignment.getId(),
+                    assignment.getTitle(), // assignment title
+                    student.getFullName(), // student name  
+                    studentId.toString(), // student ID as string
+                    submission.getProgrammingLanguage(), // programming language
+                    submission.getStatus(),
+                    submission.getScore(),
+                    submission.getExecutionTime(), // execution time
+                    submission.getMemoryUsed(), // memory used  
+                    submission.getFeedback(), // feedback
+                    submission.getSubmissionTime(), // submission time
+                    submission.getGradedTime(), // graded time
+                    null, // test cases passed
+                    null  // total test cases
+            );
+        } catch (Exception e) {
+            log.error("Unexpected error in submitAssignment for assignmentId: {}, studentId: {}, error: {}", 
+                    assignmentId, studentId, e.getMessage(), e);
+            
+            // Return a user-friendly error message
+            throw new RuntimeException("Không thể xử lý bài nộp. Vui lòng kiểm tra lại thông tin và thử lại sau. Chi tiết: " + e.getMessage());
+        }
     }
     
     /**

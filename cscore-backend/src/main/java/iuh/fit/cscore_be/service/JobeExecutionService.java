@@ -287,6 +287,10 @@ public class JobeExecutionService {
      * Get Jobe language ID from our language string
      */
     private String getJobeLanguageId(String language) {
+        if (language == null || language.trim().isEmpty()) {
+            log.error("Language is null or empty, defaulting to 'c'");
+            return "c";
+        }
         switch (language.toLowerCase()) {
             case "java":
                 return "java";

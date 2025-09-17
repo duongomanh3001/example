@@ -5,6 +5,7 @@ import iuh.fit.cscore_be.dto.response.TestResultResponse;
 import iuh.fit.cscore_be.entity.*;
 import iuh.fit.cscore_be.enums.SubmissionStatus;
 import iuh.fit.cscore_be.repository.SubmissionRepository;
+import iuh.fit.cscore_be.repository.TestCaseRepository;
 import iuh.fit.cscore_be.repository.TestResultRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,6 +36,7 @@ public class EnhancedAutoGradingService {
     
     private final HybridCodeExecutionService hybridCodeExecutionService;
     private final SubmissionRepository submissionRepository;
+    private final TestCaseRepository testCaseRepository;
     private final TestResultRepository testResultRepository;
     
     @Value("${grading.time-limit:30}")
@@ -138,7 +140,7 @@ public class EnhancedAutoGradingService {
             }
             
             // Grade using reference comparison
-            return gradeWithReferenceComparison(studentFunction, question);
+            return gradeWithReferenceComparison(studentFunction, question, submission.getProgrammingLanguage());
             
         } catch (Exception e) {
             log.error("Error grading question {} with enhanced algorithm", question.getId(), e);
@@ -151,7 +153,7 @@ public class EnhancedAutoGradingService {
     /**
      * Grade question by comparing student function with reference implementation
      */
-    private QuestionGradingResult gradeWithReferenceComparison(String studentFunction, Question question) {
+    private QuestionGradingResult gradeWithReferenceComparison(String studentFunction, Question question, String programmingLanguage) {
         QuestionGradingResult result = new QuestionGradingResult();
         result.setQuestion(question);
         result.setTestResults(new ArrayList<>());
@@ -172,7 +174,7 @@ public class EnhancedAutoGradingService {
         
         for (TestCase testCase : testCases) {
             TestCaseComparisonResult comparisonResult = compareWithReference(
-                studentFunction, question.getReferenceImplementation(), testCase, question);
+                studentFunction, question.getReferenceImplementation(), testCase, question, programmingLanguage);
             
             TestResultResponse testResult = new TestResultResponse();
             testResult.setTestCaseId(testCase.getId());
@@ -221,7 +223,7 @@ public class EnhancedAutoGradingService {
      * Compare student function with reference implementation for a single test case
      */
     private TestCaseComparisonResult compareWithReference(String studentFunction, String referenceFunction, 
-                                                        TestCase testCase, Question question) {
+                                                        TestCase testCase, Question question, String programmingLanguage) {
         TestCaseComparisonResult result = new TestCaseComparisonResult();
         
         try {
@@ -233,10 +235,10 @@ public class EnhancedAutoGradingService {
             long startTime = System.currentTimeMillis();
             
             CodeExecutionResponse studentResponse = hybridCodeExecutionService.executeCodeWithInput(
-                studentTestProgram, question.getProgrammingLanguage(), testCase.getInput());
+                studentTestProgram, programmingLanguage, testCase.getInput());
             
             CodeExecutionResponse referenceResponse = hybridCodeExecutionService.executeCodeWithInput(
-                referenceTestProgram, question.getProgrammingLanguage(), testCase.getInput());
+                referenceTestProgram, programmingLanguage, testCase.getInput());
             
             long executionTime = System.currentTimeMillis() - startTime;
             result.setExecutionTime(executionTime);
@@ -771,8 +773,8 @@ public class EnhancedAutoGradingService {
     }
 
     private TestCase getTestCaseById(Long testCaseId) {
-        // This is a simple implementation - in practice you might want to cache these or pass them differently
-        return new TestCase(); // Placeholder - implement proper lookup
+        return testCaseRepository.findById(testCaseId)
+            .orElseThrow(() -> new RuntimeException("TestCase not found with id: " + testCaseId));
     }
 
     // Inner classes for data structure

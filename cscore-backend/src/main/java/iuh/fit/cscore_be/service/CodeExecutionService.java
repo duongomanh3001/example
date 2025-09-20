@@ -116,9 +116,11 @@ public class CodeExecutionService {
         String executableCode = code;
         if (question != null) {
             log.debug("Original student code:\n{}", code);
-            executableCode = codeWrapperService.wrapFunctionCode(code, question, language);
+            // Use enhanced wrapper with test case analysis
+            executableCode = codeWrapperService.wrapFunctionCode(code, question, language, testCases);
             if (!executableCode.equals(code)) {
-                log.info("Applied code wrapping for question {} in language {}", question.getId(), language);
+                log.info("Applied enhanced code wrapping for question {} in language {} with {} test cases", 
+                    question.getId(), language, testCases.size());
                 log.debug("Wrapped code:\n{}", executableCode);
             }
         }
@@ -946,8 +948,8 @@ public class CodeExecutionService {
         ProcessBuilder pb;
         String os = System.getProperty("os.name").toLowerCase();
         if (os.contains("win")) {
-            // Windows - add UTF-8 support and proper flags
-            pb = new ProcessBuilder(gccPath, "-finput-charset=UTF-8", "-fexec-charset=UTF-8", "-o", outputPath, sourcePath);
+            // Windows - add UTF-8 support, math library and proper flags
+            pb = new ProcessBuilder(gccPath, "-finput-charset=UTF-8", "-fexec-charset=UTF-8", "-o", outputPath, sourcePath, "-lm");
             
             // Add MSYS2 directories to PATH for DLL dependencies
             java.util.Map<String, String> env = pb.environment();
@@ -962,8 +964,8 @@ public class CodeExecutionService {
                 env.put("PATH", msys2Paths);
             }
         } else {
-            // Linux/Unix/Mac - standard compilation
-            pb = new ProcessBuilder(gccPath, "-o", outputPath, sourcePath);
+            // Linux/Unix/Mac - standard compilation with math library
+            pb = new ProcessBuilder(gccPath, "-o", outputPath, sourcePath, "-lm");
         }
         return pb;
     }

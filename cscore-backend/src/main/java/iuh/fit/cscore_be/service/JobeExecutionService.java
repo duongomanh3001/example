@@ -273,6 +273,12 @@ public class JobeExecutionService {
         Map<String, Object> parameters = new HashMap<>();
         parameters.put("cputime", 30);  // CPU time limit in seconds
         parameters.put("memorylimit", 256000);  // Memory limit in KB
+        
+        // Add compile parameters for C to include math library
+        if ("c".equals(jobeLanguageId)) {
+            parameters.put("compileparams", "-lm");
+        }
+        
         request.put("parameters", parameters);
         
         // Set input if provided

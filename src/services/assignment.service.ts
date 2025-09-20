@@ -169,6 +169,9 @@ class AssignmentServiceClass {
     });
   }
 
+  // Question-specific code execution methods (these match the frontend calls)
+  // Note: These are the primary methods that frontend components use
+
   async compileCode(code: string, language: string): Promise<CodeExecutionResponse> {
     return apiClient.post<CodeExecutionResponse>('/api/student/code/compile', {
       code,
@@ -293,13 +296,56 @@ class AssignmentServiceClass {
         combinedCode = `${answerCode}\n\n${testCode}`;
         break;
       case 'java':
-        combinedCode = `public class Solution {\n    ${answerCode}\n    \n    public static void main(String[] args) {\n        Solution solution = new Solution();\n        ${testCode}\n    }\n}`;
+        // Check if testCode already contains a main method
+        if (testCode.includes('public static void main')) {
+          // Extract the main method body
+          const mainBodyMatch = testCode.match(/public static void main\(String\[\] args\)\s*\{([\s\S]*)\}/);
+          if (mainBodyMatch) {
+            let mainBody = mainBodyMatch[1].trim();
+            
+            // For Java, always use static methods to avoid instance creation complexity
+            // Add static keyword to answerCode if it doesn't have it
+            let staticAnswerCode = answerCode;
+            console.log('Debug - Before static transform:', answerCode);
+            console.log('Debug - answerCode includes static?', answerCode.includes('static'));
+            if (!answerCode.includes('static') && (answerCode.includes('void ') || answerCode.includes('int ') || answerCode.includes('String ') || answerCode.includes('boolean ') || answerCode.includes('double ') || answerCode.includes('float ') || answerCode.includes('long ') || answerCode.includes('short ') || answerCode.includes('byte ') || answerCode.includes('char '))) {
+              // Add static keyword to method definitions
+              console.log('Debug - Applying static transformation');
+              staticAnswerCode = answerCode.replace(/((?:public|private|protected)\s+)?(void|int|String|boolean|double|float|long|short|byte|char)\s+/g, '$1static $2 ');
+              console.log('Debug - After static transformation:', staticAnswerCode);
+            } else {
+              console.log('Debug - Skipping static transformation');
+            }
+            
+            console.log('Debug - Taking main method path, staticAnswerCode:', staticAnswerCode);
+            combinedCode = `class Main {\n    ${staticAnswerCode}\n    \n    public static void main(String[] args) {\n        ${mainBody}\n    }\n}`;
+          } else {
+            // Fallback to original logic if can't parse main method
+            combinedCode = `class Main {\n    ${answerCode}\n    \n    ${testCode}\n}`;
+          }
+        } else {
+          // If testCode is just method calls/logic, wrap it in main method
+          // Add static keyword to answerCode if it doesn't have it
+          let staticAnswerCode = answerCode;
+          if (!answerCode.includes('static') && (answerCode.includes('void ') || answerCode.includes('int ') || answerCode.includes('String ') || answerCode.includes('boolean ') || answerCode.includes('double ') || answerCode.includes('float ') || answerCode.includes('long ') || answerCode.includes('short ') || answerCode.includes('byte ') || answerCode.includes('char '))) {
+            // Add static keyword to method definitions
+            staticAnswerCode = answerCode.replace(/((?:public|private|protected)\s+)?(void|int|String|boolean|double|float|long|short|byte|char)\s+/g, '$1static $2 ');
+          }
+          
+          console.log('Debug - Taking no main method path, staticAnswerCode:', staticAnswerCode);
+          combinedCode = `class Main {\n    ${staticAnswerCode}\n    \n    public static void main(String[] args) {\n        ${testCode}\n    }\n}`;
+        }
         break;
       default:
         // Default to C for backward compatibility
         combinedCode = `#include <stdio.h>\n#include <string.h>\n\n${answerCode}\n\nint main() {\n    ${testCode}\n    return 0;\n}`;
     }
     
+    console.log('Debug - Original answerCode:', answerCode);
+    console.log('Debug - Original testCode:', testCode);
+    console.log('Debug - Language:', language);
+    console.log('Debug - testCode contains main?', testCode.includes('public static void main'));
+    console.log('Debug - Final combinedCode before sending:', combinedCode);
     console.log('Sending code to backend:', {
       combinedCode,
       language,

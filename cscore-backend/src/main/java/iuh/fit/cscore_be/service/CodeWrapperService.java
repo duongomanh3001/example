@@ -3,27 +3,72 @@ package iuh.fit.cscore_be.service;
 import iuh.fit.cscore_be.entity.Question;
 import iuh.fit.cscore_be.entity.TestCase;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
  * Service to wrap student function implementations into complete executable programs
+ * Enhanced with Universal Wrapper System for intelligent, configurable code wrapping
  * This solves the issue where students submit only function code but the system expects complete programs
  */
 @Service
 @Slf4j
 public class CodeWrapperService {
 
+    @Autowired
+    private EnhancedCodeWrapperService enhancedWrapperService;
+
     /**
      * Wrap student function code into a complete executable program
+     * Enhanced with Universal Wrapper System for intelligent code analysis
      * @param studentCode The function code submitted by the student
      * @param question The question containing metadata about the expected function
      * @param language The programming language
      * @return Complete executable program
      */
     public String wrapFunctionCode(String studentCode, Question question, String language) {
+        return wrapFunctionCode(studentCode, question, language, null);
+    }
+
+    /**
+     * Enhanced wrapper method with test case analysis
+     * @param studentCode The function code submitted by the student
+     * @param question The question containing metadata about the expected function
+     * @param language The programming language
+     * @param testCases Test cases for pattern analysis (optional)
+     * @return Complete executable program
+     */
+    public String wrapFunctionCode(String studentCode, Question question, String language, List<TestCase> testCases) {
+        try {
+            // First, try the enhanced universal wrapper system
+            log.info("Attempting enhanced wrapper generation for language: {}", language);
+            String enhancedResult = enhancedWrapperService.wrapFunctionCode(studentCode, question, language, testCases);
+            
+            if (enhancedResult != null && !enhancedResult.equals(studentCode)) {
+                log.info("Successfully generated enhanced wrapper");
+                return enhancedResult;
+            }
+        } catch (Exception e) {
+            log.warn("Enhanced wrapper generation failed, falling back to legacy system: {}", e.getMessage());
+        }
+        
+        // Fallback to legacy system
+        log.info("Using legacy wrapper system as fallback");
+        return wrapFunctionCodeLegacy(studentCode, question, language);
+    }
+
+    /**
+     * Legacy wrapper method (preserved for backward compatibility)
+     * @param studentCode The function code submitted by the student
+     * @param question The question containing metadata about the expected function
+     * @param language The programming language
+     * @return Complete executable program
+     */
+    private String wrapFunctionCodeLegacy(String studentCode, Question question, String language) {
         // Check if the code already has a main function
         if (hasMainFunction(studentCode, language)) {
             log.info("Student code already has main function, using as-is");
@@ -76,11 +121,12 @@ public class CodeWrapperService {
                 Pattern javaMainPattern = Pattern.compile("public\\s+static\\s+void\\s+main\\s*\\(", Pattern.CASE_INSENSITIVE);
                 return javaMainPattern.matcher(code).find();
             case "python":
-                // Look for if __name__ == "__main__" or direct execution code
-                return code.contains("if __name__") || 
-                       code.contains("input(") || 
-                       code.contains("print(") ||
-                       code.matches(".*\\n\\s*[a-zA-Z_].*");
+                // Look for if __name__ == "__main__" pattern - this indicates a complete program
+                // Just having print() or input() doesn't mean it's a complete program
+                return code.contains("if __name__ == \"__main__\"") || 
+                       code.contains("if __name__=='__main__'") ||
+                       code.contains("if __name__ == '__main__'") ||
+                       code.contains("if __name__=='__main__'");
             default:
                 return false;
         }
@@ -164,389 +210,259 @@ public class CodeWrapperService {
 
     /**
      * Wrap C function with main function and I/O handling
+     * UPDATED: Uses Enhanced Universal Wrapper System instead of hardcoded logic
      */
     private String wrapCFunction(String functionCode, FunctionInfo info) {
-        StringBuilder wrapper = new StringBuilder();
+        log.info("Legacy C wrapper: Attempting to use Enhanced system for function: {}", 
+                 info != null ? info.functionName : "unknown");
         
-        wrapper.append("#include <stdio.h>\n");
-        wrapper.append("#include <string.h>\n");
-        wrapper.append("#include <stdlib.h>\n\n");
-        
-        // Add the student's function code
-        wrapper.append(functionCode).append("\n\n");
-        
-        // Add main function with improved input parsing
-        wrapper.append("int main() {\n");
-        wrapper.append("    char input[1000];\n");
-        wrapper.append("    if (fgets(input, sizeof(input), stdin) == NULL) {\n");
-        wrapper.append("        return 1;\n");
-        wrapper.append("    }\n\n");
-        
-        // Parse input based on function signature
-        log.debug("Checking if function '{}' with parameters '{}' is a string-char function", info.functionName, info.parameters);
-        if (isStringCharFunction(info.parameters) || isCountCharacterFunction(info.functionName)) {
-            // Function expects string and character (like countCharacter)
-            wrapper.append("    // Remove newline from input\n");
-            wrapper.append("    int len = strlen(input);\n");
-            wrapper.append("    if (len > 0 && input[len-1] == '\\n') {\n");
-            wrapper.append("        input[len-1] = '\\0';\n");
-            wrapper.append("        len--;\n");
-            wrapper.append("    }\n\n");
+        try {
+            // Try to create a basic question object from FunctionInfo
+            Question tempQuestion = createQuestionFromFunctionInfo(info);
             
-            wrapper.append("    // Parse input: handle various formats like \\\"Hello l\\\", etc.\n");
-            wrapper.append("    char str[500] = {0};\n");
-            wrapper.append("    char key = '\\0';\n");
-            wrapper.append("    \n");
-            wrapper.append("    // Find the last space to separate string and character\n");
-            wrapper.append("    int last_space = -1;\n");
-            wrapper.append("    for (int k = len - 1; k >= 0; k--) {\n");
-            wrapper.append("        if (input[k] == ' ') {\n");
-            wrapper.append("            last_space = k;\n");
-            wrapper.append("            break;\n");
-            wrapper.append("        }\n");
-            wrapper.append("    }\n");
-            wrapper.append("    \n");
-            wrapper.append("    if (last_space == -1 || last_space >= len - 1) {\n");
-            wrapper.append("        // Handle single character input (edge case)\n");
-            wrapper.append("        if (len == 1) {\n");
-            wrapper.append("            str[0] = '\\0'; // empty string\n");
-            wrapper.append("            key = input[0];\n");
-            wrapper.append("        } else {\n");
-            wrapper.append("            // Invalid format, but try to handle gracefully\n");
-            wrapper.append("            strcpy(str, input);\n");
-            wrapper.append("            key = ' '; // default character\n");
-            wrapper.append("        }\n");
-            wrapper.append("    } else {\n");
-            wrapper.append("        // Extract character part (after last space)\n");
-            wrapper.append("        key = input[last_space + 1];\n");
-            wrapper.append("        \n");
-            wrapper.append("        // Extract string part (before last space)\n");
-            wrapper.append("        char string_part[500];\n");
-            wrapper.append("        strncpy(string_part, input, last_space);\n");
-            wrapper.append("        string_part[last_space] = '\\0';\n");
-            wrapper.append("        \n");
-            wrapper.append("        // Handle different string formats:\n");
-            wrapper.append("        // 1. \\\"Hello\\\" -> Hello\n");
-            wrapper.append("        // 2. Empty strings and special cases\n");
-            wrapper.append("        // 3. Simple strings without quotes\n");
-            wrapper.append("        \n");
-            wrapper.append("        int str_len = strlen(string_part);\n");
-            wrapper.append("        \n");
-            wrapper.append("        // Check for quoted strings\n");
-            wrapper.append("        if (str_len >= 2 && string_part[0] == '\"' && string_part[str_len-1] == '\"') {\n");
-            wrapper.append("            // Remove outer quotes\n");
-            wrapper.append("            strncpy(str, string_part + 1, str_len - 2);\n");
-            wrapper.append("            str[str_len - 2] = '\\0';\n");
-            wrapper.append("        } else {\n");
-            wrapper.append("            // No quotes, use as-is\n");
-            wrapper.append("            strcpy(str, string_part);\n");
-            wrapper.append("        }\n");
-            wrapper.append("    }\n");
-            wrapper.append("    \n");
-            wrapper.append("    // Call function and print result\n");
-            wrapper.append("    int result = ").append(info.functionName).append("(str, key);\n");
-            wrapper.append("    printf(\"%d\", result);\n");
-            wrapper.append("    \n");
-            wrapper.append("    return 0;\n");
-        } else {
-            // Generic parameter parsing - try to parse based on common patterns
-            wrapper.append("    // Generic parameter parsing\n");
-            wrapper.append("    // TODO: Add specific parsing logic based on function signature\n");
-            wrapper.append("    printf(\"Error: Unsupported parameter types\");\n");
-            wrapper.append("    return 1;\n");
+            // Attempt to use Enhanced system
+            String enhancedResult = enhancedWrapperService.wrapFunctionCode(
+                functionCode, tempQuestion, "c", null);
+            
+            if (enhancedResult != null && !enhancedResult.equals(functionCode)) {
+                log.info("Successfully generated C wrapper using Enhanced system");
+                return enhancedResult;
+            }
+        } catch (Exception e) {
+            log.warn("Enhanced C wrapper failed in legacy fallback: {}", e.getMessage());
         }
         
-        wrapper.append("}\n");
+        // Ultimate fallback: Basic C wrapper without hardcoded parsing
+        log.warn("Using basic C wrapper as ultimate fallback");
+        return generateBasicCWrapper(functionCode, info);
+    }
+    
+    /**
+     * Generate basic C wrapper using UniversalWrapperService as fallback
+     */
+    private String generateBasicCWrapper(String functionCode, FunctionInfo info) {
+        log.warn("Basic C wrapper fallback - attempting UniversalWrapperService");
         
-        return wrapper.toString();
+        try {
+            // Use UniversalWrapperService as final fallback
+            UniversalWrapperService universalService = new UniversalWrapperService();
+            UniversalWrapperService.FunctionSignature signature = new UniversalWrapperService.FunctionSignature();
+            
+            if (info != null) {
+                signature.setFunctionName(info.functionName);
+                signature.setParameters(info.parameters);
+                signature.setReturnType(info.returnType);
+                signature.setLanguage("c");
+            }
+            
+            String result = universalService.generateUniversalWrapper(functionCode, signature, null);
+            if (result != null && !result.equals(functionCode)) {
+                log.info("UniversalWrapperService generated C fallback successfully");
+                return result;
+            }
+        } catch (Exception e) {
+            log.error("UniversalWrapperService C fallback failed: {}", e.getMessage());
+        }
+        
+        // Return original code if all systems fail
+        log.error("All wrapper systems failed for C - returning original code");
+        return functionCode;
     }
 
     /**
-     * Wrap C++ function (similar to C but with C++ includes)
+     * Wrap C++ function using Enhanced Universal Wrapper System
      */
     private String wrapCppFunction(String functionCode, FunctionInfo info) {
-        StringBuilder wrapper = new StringBuilder();
+        log.info("Legacy C++ wrapper: Attempting to use Enhanced system for function: {}", 
+                 info != null ? info.functionName : "unknown");
         
-        wrapper.append("#include <iostream>\n");
-        wrapper.append("#include <string>\n");
-        wrapper.append("#include <cstring>\n");
-        wrapper.append("using namespace std;\n\n");
-        
-        // Add the student's function code
-        wrapper.append(functionCode).append("\n\n");
-        
-        // Add main function similar to C version
-        wrapper.append("int main() {\n");
-        wrapper.append("    char input[1000];\n");
-        wrapper.append("    if (!cin.getline(input, sizeof(input))) {\n");
-        wrapper.append("        return 1;\n");
-        wrapper.append("    }\n\n");
-        
-        // Similar parsing logic as improved C version
-        if (isStringCharFunction(info.parameters) || isCountCharacterFunction(info.functionName)) {
-            wrapper.append("    int len = strlen(input);\n");
-            wrapper.append("    char str[500] = {0};\n");
-            wrapper.append("    char key = '\\0';\n");
-            wrapper.append("    \n");
-            wrapper.append("    // Find the last space to separate string and character\n");
-            wrapper.append("    int last_space = -1;\n");
-            wrapper.append("    for (int i = len - 1; i >= 0; i--) {\n");
-            wrapper.append("        if (input[i] == ' ') {\n");
-            wrapper.append("            last_space = i;\n");
-            wrapper.append("            break;\n");
-            wrapper.append("        }\n");
-            wrapper.append("    }\n");
-            wrapper.append("    \n");
-            wrapper.append("    if (last_space == -1 || last_space >= len - 1) {\n");
-            wrapper.append("        if (len == 1) {\n");
-            wrapper.append("            str[0] = '\\0';\n");
-            wrapper.append("            key = input[0];\n");
-            wrapper.append("        } else {\n");
-            wrapper.append("            strcpy(str, input);\n");
-            wrapper.append("            key = ' ';\n");
-            wrapper.append("        }\n");
-            wrapper.append("    } else {\n");
-            wrapper.append("        key = input[last_space + 1];\n");
-            wrapper.append("        \n");
-            wrapper.append("        char string_part[500];\n");
-            wrapper.append("        strncpy(string_part, input, last_space);\n");
-            wrapper.append("        string_part[last_space] = '\\0';\n");
-            wrapper.append("        \n");
-            wrapper.append("        int str_len = strlen(string_part);\n");
-            wrapper.append("        \n");
-            wrapper.append("        if (str_len >= 2 && string_part[0] == '\"' && string_part[str_len-1] == '\"') {\n");
-            wrapper.append("            strncpy(str, string_part + 1, str_len - 2);\n");
-            wrapper.append("            str[str_len - 2] = '\\0';\n");
-            wrapper.append("            \n");
-            wrapper.append("            if (strcmp(str, \\\"\\\\\\\"\\\\\\\"\\\") == 0) {\n");
-            wrapper.append("                str[0] = '\\0';\n");
-            wrapper.append("            }\n");
-            wrapper.append("        } else if (str_len == 4 && strcmp(string_part, \\\"\\\\\\\"\\\\\\\"\\\") == 0) {\n");
-            wrapper.append("            str[0] = '\\0';\n");
-            wrapper.append("        } else {\n");
-            wrapper.append("            strcpy(str, string_part);\n");
-            wrapper.append("        }\n");
-            wrapper.append("    }\n");
-            wrapper.append("    \n");
-            wrapper.append("    int result = ").append(info.functionName).append("(str, key);\n");
-            wrapper.append("    cout << result;\n");
-        } else {
-            wrapper.append("    cout << \\\"Error: Unsupported parameter types\\\";\n");
+        try {
+            // Try to create a basic question object from FunctionInfo
+            Question tempQuestion = createQuestionFromFunctionInfo(info);
+            
+            // Attempt to use Enhanced system first
+            String enhancedResult = enhancedWrapperService.wrapFunctionCode(
+                functionCode, tempQuestion, "cpp", null);
+            
+            if (enhancedResult != null && !enhancedResult.equals(functionCode)) {
+                log.info("Successfully generated C++ wrapper using Enhanced system");
+                return enhancedResult;
+            }
+        } catch (Exception e) {
+            log.warn("Enhanced C++ wrapper failed in legacy fallback: {}", e.getMessage());
         }
         
-        wrapper.append("    return 0;\n");
-        wrapper.append("}\n");
+        // Ultimate fallback: Use UniversalWrapperService
+        log.warn("Using UniversalWrapperService as C++ ultimate fallback");
+        return generateUniversalCppWrapper(functionCode, info);
+    }
+    
+    /**
+     * Generate C++ wrapper using UniversalWrapperService as fallback
+     */
+    private String generateUniversalCppWrapper(String functionCode, FunctionInfo info) {
+        try {
+            // Use UniversalWrapperService as final fallback
+            UniversalWrapperService universalService = new UniversalWrapperService();
+            UniversalWrapperService.FunctionSignature signature = new UniversalWrapperService.FunctionSignature();
+            
+            if (info != null) {
+                signature.setFunctionName(info.functionName);
+                signature.setParameters(info.parameters);
+                signature.setReturnType(info.returnType);
+                signature.setLanguage("cpp");
+            }
+            
+            String result = universalService.generateUniversalWrapper(functionCode, signature, null);
+            if (result != null && !result.equals(functionCode)) {
+                log.info("UniversalWrapperService generated C++ fallback successfully");
+                return result;
+            }
+        } catch (Exception e) {
+            log.error("UniversalWrapperService C++ fallback failed: {}", e.getMessage());
+        }
         
-        return wrapper.toString();
+        // Return original code if all systems fail
+        log.error("All wrapper systems failed for C++ - returning original code");
+        return functionCode;
     }
 
     /**
      * Wrap Java function with main method
+     * UPDATED: Uses Enhanced Universal Wrapper System instead of hardcoded logic
      */
     private String wrapJavaFunction(String functionCode, FunctionInfo info) {
-        StringBuilder wrapper = new StringBuilder();
+        log.info("Legacy Java wrapper: Attempting to use Enhanced system for function: {}", 
+                 info != null ? info.functionName : "unknown");
         
-        wrapper.append("import java.util.Scanner;\n\n");
-        wrapper.append("public class Solution {\n\n");
-        
-        // Add the student's function code
-        wrapper.append("    ").append(functionCode.replaceAll("\n", "\n    ")).append("\n\n");
-        
-        wrapper.append("    public static void main(String[] args) {\n");
-        wrapper.append("        Scanner scanner = new Scanner(System.in);\n");
-        wrapper.append("        if (!scanner.hasNextLine()) {\n");
-        wrapper.append("            System.exit(1);\n");
-        wrapper.append("        }\n");
-        wrapper.append("        String input = scanner.nextLine().trim();\n");
-        wrapper.append("        \n");
-        
-        // Check if this is a string + character function
-        if (info != null && (isStringCharFunction(info.parameters) || isCountCharacterFunction(info.functionName))) {
-            wrapper.append("        try {\n");
-            wrapper.append("            String stringValue = \"\";\n");
-            wrapper.append("            char charValue = ' ';\n");
-            wrapper.append("            \n");
-            wrapper.append("            if (input.isEmpty()) {\n");
-            wrapper.append("                stringValue = \"\";\n");
-            wrapper.append("                charValue = ' ';\n");
-            wrapper.append("            } else {\n");
-            wrapper.append("                // Find the last space to separate string and character\n");
-            wrapper.append("                int lastSpace = input.lastIndexOf(' ');\n");
-            wrapper.append("                \n");
-            wrapper.append("                if (lastSpace == -1 || lastSpace >= input.length() - 1) {\n");
-            wrapper.append("                    // Handle single character input\n");
-            wrapper.append("                    if (input.length() == 1) {\n");
-            wrapper.append("                        stringValue = \"\";\n");
-            wrapper.append("                        charValue = input.charAt(0);\n");
-            wrapper.append("                    } else {\n");
-            wrapper.append("                        stringValue = input;\n");
-            wrapper.append("                        charValue = ' ';\n");
-            wrapper.append("                    }\n");
-            wrapper.append("                } else {\n");
-            wrapper.append("                    // Extract character part (after last space)\n");
-            wrapper.append("                    charValue = input.charAt(lastSpace + 1);\n");
-            wrapper.append("                    \n");
-            wrapper.append("                    // Extract string part (before last space)\n");
-            wrapper.append("                    String stringPart = input.substring(0, lastSpace).trim();\n");
-            wrapper.append("                    \n");
-            wrapper.append("                    // Handle different string formats:\n");
-            wrapper.append("                    if (stringPart.equals(\\\"\\\\\\\"\\\\\\\"\\\") || stringPart.equals(\\\"\\\"\\\"\\\")) {\n");
-            wrapper.append("                        // Handle empty string cases\n");
-            wrapper.append("                        stringValue = \"\";\n");
-            wrapper.append("                    } else if (stringPart.length() >= 2 && stringPart.startsWith(\\\"\\\"\\\") && stringPart.endsWith(\\\"\\\"\\\")) {\n");
-            wrapper.append("                        // Remove outer quotes\n");
-            wrapper.append("                        stringValue = stringPart.substring(1, stringPart.length() - 1);\n");
-            wrapper.append("                        \n");
-            wrapper.append("                        // Handle escaped quotes\n");
-            wrapper.append("                        if (stringValue.equals(\\\"\\\\\\\"\\\\\\\"\\\")) {\n");
-            wrapper.append("                            stringValue = \"\";\n");
-            wrapper.append("                        }\n");
-            wrapper.append("                    } else {\n");
-            wrapper.append("                        // No quotes, use as-is\n");
-            wrapper.append("                        stringValue = stringPart;\n");
-            wrapper.append("                    }\n");
-            wrapper.append("                }\n");
-            wrapper.append("            }\n");
-            wrapper.append("            \n");
-            wrapper.append("            // Call function and print result\n");
-            wrapper.append("            Solution solution = new Solution();\n");
-            wrapper.append("            int result = solution.").append(info.functionName).append("(stringValue, charValue);\n");
-            wrapper.append("            System.out.print(result);\n");
-            wrapper.append("            \n");
-            wrapper.append("        } catch (Exception e) {\n");
-            wrapper.append("            System.out.println(\\\"Error: \\\" + e.getMessage());\n");
-            wrapper.append("            System.exit(1);\n");
-            wrapper.append("        }\n");
-        } else {
-            // Generic parameter parsing
-            wrapper.append("        try {\n");
-            wrapper.append("            String[] params = input.split(\\\" \\\");\n");
-            wrapper.append("            \n");
-            wrapper.append("            // Convert parameters to appropriate types\n");
-            wrapper.append("            // TODO: Add specific conversion logic based on function signature\n");
-            wrapper.append("            \n");
-            wrapper.append("            System.out.println(\\\"Error: Generic Java wrapper not fully implemented\\\");\n");
-            wrapper.append("        } catch (Exception e) {\n");
-            wrapper.append("            System.out.println(\\\"Error: \\\" + e.getMessage());\n");
-            wrapper.append("            System.exit(1);\n");
-            wrapper.append("        }\n");
+        try {
+            // Try to create a basic question object from FunctionInfo
+            Question tempQuestion = createQuestionFromFunctionInfo(info);
+            
+            // Attempt to use Enhanced system
+            String enhancedResult = enhancedWrapperService.wrapFunctionCode(
+                functionCode, tempQuestion, "java", null);
+            
+            if (enhancedResult != null && !enhancedResult.equals(functionCode)) {
+                log.info("Successfully generated Java wrapper using Enhanced system");
+                return enhancedResult;
+            }
+        } catch (Exception e) {
+            log.warn("Enhanced Java wrapper failed in legacy fallback: {}", e.getMessage());
         }
         
-        wrapper.append("        scanner.close();\n");
-        wrapper.append("    }\n");
-        wrapper.append("}\n");
+        // Ultimate fallback: Basic Java wrapper without hardcoded parsing
+        log.warn("Using basic Java wrapper as ultimate fallback");
+        return generateBasicJavaWrapper(functionCode, info);
+    }
+    
+    /**
+     * Generate basic Java wrapper using UniversalWrapperService as fallback
+     */
+    private String generateBasicJavaWrapper(String functionCode, FunctionInfo info) {
+        log.warn("Basic Java wrapper fallback - attempting UniversalWrapperService");
         
-        return wrapper.toString();
+        try {
+            // Use UniversalWrapperService as final fallback
+            UniversalWrapperService universalService = new UniversalWrapperService();
+            UniversalWrapperService.FunctionSignature signature = new UniversalWrapperService.FunctionSignature();
+            
+            if (info != null) {
+                signature.setFunctionName(info.functionName);
+                signature.setParameters(info.parameters);
+                signature.setReturnType(info.returnType);
+                signature.setLanguage("java");
+            }
+            
+            String result = universalService.generateUniversalWrapper(functionCode, signature, null);
+            if (result != null && !result.equals(functionCode)) {
+                log.info("UniversalWrapperService generated Java fallback successfully");
+                return result;
+            }
+        } catch (Exception e) {
+            log.error("UniversalWrapperService Java fallback failed: {}", e.getMessage());
+        }
+        
+        // Return original code if all systems fail
+        log.error("All wrapper systems failed for Java - returning original code");
+        return functionCode;
     }
 
     /**
      * Wrap Python function with main execution
+     * UPDATED: Uses Enhanced Universal Wrapper System instead of hardcoded logic
      */
     private String wrapPythonFunction(String functionCode, FunctionInfo info) {
-        StringBuilder wrapper = new StringBuilder();
+        log.info("Legacy Python wrapper: Attempting to use Enhanced system for function: {}", 
+                 info != null ? info.functionName : "unknown");
         
-        // Add the student's function code
-        wrapper.append(functionCode).append("\n\n");
-        
-        wrapper.append("if __name__ == \"__main__\":\n");
-        wrapper.append("    import sys\n");
-        wrapper.append("    \n");
-        wrapper.append("    # Read input from stdin\n");
-        wrapper.append("    try:\n");
-        wrapper.append("        input_line = input().strip()\n");
-        wrapper.append("        \n");
-        
-        // Check if this is a string + character function
-        if (info != null && isStringCharFunction(info.parameters)) {
-            wrapper.append("        # Parse string and character from input (format: \"string char\")\n");
-            wrapper.append("        if not input_line:\n");
-            wrapper.append("            string_value = \"\"\n");
-            wrapper.append("            char_value = ' '\n");
-            wrapper.append("        else:\n");
-            wrapper.append("            # Find last space to separate string and character\n");
-            wrapper.append("            last_space = input_line.rfind(' ')\n");
-            wrapper.append("            if last_space == -1:\n");
-            wrapper.append("                string_value = \"\"\n");
-            wrapper.append("                char_value = input_line[0] if input_line else ' '\n");
-            wrapper.append("            else:\n");
-            wrapper.append("                string_part = input_line[:last_space].strip()\n");
-            wrapper.append("                char_part = input_line[last_space + 1:].strip()\n");
-            wrapper.append("                \n");
-            wrapper.append("                # Parse string part\n");
-            wrapper.append("                if string_part == '\"\"' or string_part == '\\\\\"\\\\\"':\n");
-            wrapper.append("                    string_value = \"\"\n");
-            wrapper.append("                elif string_part.startswith('\"') and string_part.endswith('\"') and len(string_part) >= 2:\n");
-            wrapper.append("                    string_value = string_part[1:-1]  # Remove quotes\n");
-            wrapper.append("                else:\n");
-            wrapper.append("                    string_value = string_part\n");
-            wrapper.append("                \n");
-            wrapper.append("                # Parse character part\n");
-            wrapper.append("                char_value = char_part[0] if char_part else ' '\n");
-            wrapper.append("        \n");
-            wrapper.append("        # Call the function with parsed parameters\n");
-            wrapper.append("        result = ").append(info.functionName).append("(string_value, char_value)\n");
-        } else {
-            // Generic parameter parsing for other function types
-            wrapper.append("        # Generic parameter parsing\n");
-            wrapper.append("        params = input_line.split()\n");
-            wrapper.append("        \n");
-            wrapper.append("        # Convert parameters to appropriate types\n");
-            wrapper.append("        converted_params = []\n");
-            wrapper.append("        for param in params:\n");
-            wrapper.append("            try:\n");
-            wrapper.append("                # Try to convert to int first\n");
-            wrapper.append("                converted_params.append(int(param))\n");
-            wrapper.append("            except ValueError:\n");
-            wrapper.append("                try:\n");
-            wrapper.append("                    # Then try float\n");
-            wrapper.append("                    converted_params.append(float(param))\n");
-            wrapper.append("                except ValueError:\n");
-            wrapper.append("                    # Keep as string\n");
-            wrapper.append("                    converted_params.append(param)\n");
-            wrapper.append("        \n");
-            wrapper.append("        # Call the function\n");
-            wrapper.append("        result = ").append(info != null ? info.functionName : "main_function").append("(*converted_params)\n");
+        try {
+            // Try to create a basic question object from FunctionInfo
+            Question tempQuestion = createQuestionFromFunctionInfo(info);
+            
+            // Attempt to use Enhanced system
+            String enhancedResult = enhancedWrapperService.wrapFunctionCode(
+                functionCode, tempQuestion, "python", null);
+            
+            if (enhancedResult != null && !enhancedResult.equals(functionCode)) {
+                log.info("Successfully generated Python wrapper using Enhanced system");
+                return enhancedResult;
+            }
+        } catch (Exception e) {
+            log.warn("Enhanced Python wrapper failed in legacy fallback: {}", e.getMessage());
         }
         
-        wrapper.append("        \n");
-        wrapper.append("        # Print the result\n");
-        wrapper.append("        print(result)\n");
-        wrapper.append("        \n");
-        wrapper.append("    except Exception as e:\n");
-        wrapper.append("        print(f\"Error: {e}\")\n");
-        wrapper.append("        sys.exit(1)\n");
+        // Ultimate fallback: Basic wrapper without hardcoded parsing
+        log.warn("Using basic Python wrapper as ultimate fallback");
+        return generateBasicPythonWrapper(functionCode, info);
+    }
+    
+    /**
+     * Create a temporary Question object from FunctionInfo for Enhanced system
+     */
+    private Question createQuestionFromFunctionInfo(FunctionInfo info) {
+        Question tempQuestion = new Question();
+        if (info != null) {
+            tempQuestion.setFunctionName(info.functionName);
+            tempQuestion.setFunctionSignature(info.functionSignature);
+        }
+        return tempQuestion;
+    }
+    
+    /**
+     * Generate basic Python wrapper using UniversalWrapperService as fallback
+     * This is the ultimate fallback when all else fails
+     */
+    private String generateBasicPythonWrapper(String functionCode, FunctionInfo info) {
+        log.warn("Basic Python wrapper fallback - attempting UniversalWrapperService");
         
-        return wrapper.toString();
+        try {
+            // Use UniversalWrapperService as final fallback
+            UniversalWrapperService universalService = new UniversalWrapperService();
+            UniversalWrapperService.FunctionSignature signature = new UniversalWrapperService.FunctionSignature();
+            
+            if (info != null) {
+                signature.setFunctionName(info.functionName);
+                signature.setParameters(info.parameters);
+                signature.setReturnType(info.returnType);
+                signature.setLanguage("python");
+            }
+            
+            String result = universalService.generateUniversalWrapper(functionCode, signature, null);
+            if (result != null && !result.equals(functionCode)) {
+                log.info("UniversalWrapperService generated Python fallback successfully");
+                return result;
+            }
+        } catch (Exception e) {
+            log.error("UniversalWrapperService Python fallback failed: {}", e.getMessage());
+        }
+        
+        // Return original code if all systems fail
+        log.error("All wrapper systems failed for Python - returning original code");
+        return functionCode;
     }
 
-    /**
-     * Check if function parameters match string + character pattern
-     */
-    private boolean isStringCharFunction(String parameters) {
-        if (parameters == null) return false;
-        
-        // Remove whitespace and normalize
-        String normalized = parameters.replaceAll("\\s+", " ").toLowerCase().trim();
-        
-        // Common patterns for string + character functions
-        return normalized.contains("char") && (
-            normalized.contains("[]") ||
-            normalized.contains("*") ||
-            normalized.matches(".*const\\s+char\\s*\\*.*char.*") ||
-            normalized.matches(".*char\\s*\\[\\s*\\].*char.*") ||
-            normalized.matches(".*char\\s+\\w+\\s*\\[\\s*\\].*char\\s+\\w+.*")
-        );
-    }
-
-    /**
-     * Check if function name suggests it's a character counting function
-     */
-    private boolean isCountCharacterFunction(String functionName) {
-        if (functionName == null) return false;
-        
-        String normalized = functionName.toLowerCase();
-        return normalized.contains("count") && normalized.contains("char");
-    }
+    // NOTE: Hardcode helper methods removed - pattern detection now handled by Enhanced system
 
     /**
      * Helper class to store function information

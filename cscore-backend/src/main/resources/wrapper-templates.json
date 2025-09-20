@@ -1,0 +1,154 @@
+{
+  "wrapperTemplates": {
+    "python": {
+      "string_char": {
+        "name": "Python String Character Parser",
+        "description": "Handles string and character input patterns",
+        "template": "import sys\nimport json\nimport re\n\n{STUDENT_CODE}\n\n# {PARSING_CODE}\ndef parse_input_intelligently(input_line):\n    \"\"\"Intelligent parser for {INPUT_PATTERN} pattern\"\"\"\n    if not input_line:\n        return ['', ' ']\n    \n    last_space = input_line.rfind(' ')\n    if last_space == -1:\n        return ['', input_line[0] if input_line else ' ']\n    \n    string_part = input_line[:last_space].strip()\n    char_part = input_line[last_space + 1:].strip()\n    \n    # Handle quoted strings\n    if string_part.startswith('\"') and string_part.endswith('\"'):\n        string_part = string_part[1:-1]\n    \n    return [string_part, char_part[0] if char_part else ' ']\n\nif __name__ == '__main__':\n    try:\n        input_line = input().strip()\n        args = parse_input_intelligently(input_line)\n        result = {FUNCTION_NAME}(*args)\n        if result is not None:\n            print(result)\n    except Exception as e:\n        print(f\"Error: {e}\")\n        sys.exit(1)\n"
+      },
+      "array_size": {
+        "name": "Python Array Size Parser",
+        "description": "Handles array with size parameter",
+        "template": "import sys\n\n{STUDENT_CODE}\n\nif __name__ == '__main__':\n    try:\n        input_line = input().strip()\n        \n        # Parse input into array\n        numbers = []\n        if input_line:\n            for num_str in input_line.replace(',', ' ').split():\n                try:\n                    numbers.append(int(num_str))\n                except ValueError:\n                    continue\n        \n        # Find user function safely\n        user_function = None\n        globals_snapshot = list(globals().items())\n        for name, obj in globals_snapshot:\n            if (callable(obj) and hasattr(obj, '__code__') and \n                not name.startswith('_') and \n                name not in ['input', 'print', 'len', 'range', 'int', 'float', 'str', 'globals_snapshot', 'sys']):\n                user_function = obj\n                break\n        \n        if user_function:\n            user_function(numbers, len(numbers))\n        else:\n            {FUNCTION_NAME}(numbers, len(numbers))\n    except Exception as e:\n        print(f\"Error: {e}\")\n        sys.exit(1)\n"
+      },
+      "single_value": {
+        "name": "Python Single Value Parser",
+        "description": "Handles single value input",
+        "template": "import sys\n\n{STUDENT_CODE}\n\nif __name__ == '__main__':\n    try:\n        input_line = input().strip()\n        \n        # Parse single value\n        value = 0\n        if input_line:\n            try:\n                value = int(input_line)\n            except ValueError:\n                try:\n                    value = float(input_line)\n                except ValueError:\n                    value = input_line\n        \n        # Find user function safely\n        user_function = None\n        globals_snapshot = list(globals().items())\n        for name, obj in globals_snapshot:\n            if (callable(obj) and hasattr(obj, '__code__') and \n                not name.startswith('_') and \n                name not in ['input', 'print', 'len', 'range', 'int', 'float', 'str', 'globals_snapshot', 'sys']):\n                user_function = obj\n                break\n        \n        if user_function:\n            user_function(value)\n        else:\n            {FUNCTION_NAME}(value)\n    except Exception as e:\n        print(f\"Error: {e}\")\n        sys.exit(1)\n"
+      },
+      "array": {
+        "name": "Python Array Parser",
+        "description": "Handles array input with space or comma separation",
+        "template": "import sys\nimport io\n\n# Capture any output during import and discard it\nold_stdout = sys.stdout\nsys.stdout = io.StringIO()\n\n{STUDENT_CODE}\n\n# Restore stdout\nsys.stdout = old_stdout\n\nif __name__ == '__main__':\n    try:\n        input_line = input().strip()\n        \n        # Parse array input\n        if not input_line:\n            numbers = []\n        else:\n            # Remove brackets if present\n            clean_input = input_line.strip()\n            if clean_input.startswith('[') and clean_input.endswith(']'):\n                clean_input = clean_input[1:-1]\n            \n            # Split and convert to numbers\n            numbers = []\n            for num_str in clean_input.replace(',', ' ').split():\n                try:\n                    numbers.append(int(num_str.strip()))\n                except ValueError:\n                    try:\n                        numbers.append(float(num_str.strip()))\n                    except ValueError:\n                        continue\n        \n        # Find user function safely\n        user_function = None\n        globals_snapshot = list(globals().items())\n        for name, obj in globals_snapshot:\n            if (callable(obj) and \n                hasattr(obj, '__code__') and \n                name not in ['input', 'print', 'len', 'range', 'int', 'float', 'str', 'list', 'dict', 'globals_snapshot', 'io', 'old_stdout'] and\n                not name.startswith('_') and\n                name != 'sys'):\n                user_function = obj\n                break\n        \n        # Call function - try both signatures\n        if user_function:\n            try:\n                # Try array + size signature first (more common for assignments)\n                user_function(numbers, len(numbers))\n            except TypeError:\n                # Fallback to array only\n                user_function(numbers)\n        else:\n            try:\n                {FUNCTION_NAME}(numbers, len(numbers))\n            except:\n                {FUNCTION_NAME}(numbers)\n            \n    except Exception as e:\n        print(f\"Error: {e}\")\n        sys.exit(1)\n"
+      }
+    },
+    "c": {
+      "string_char": {
+        "name": "C String Character Parser",
+        "description": "Handles string and character input in C",
+        "template": "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n\n{STUDENT_CODE}\n\nint main() {\n    char input_buffer[10000];\n    if (fgets(input_buffer, sizeof(input_buffer), stdin) != NULL) {\n        // Remove newline\n        input_buffer[strcspn(input_buffer, \"\\n\")] = 0;\n        \n        // Parse string and character\n        char *last_space = strrchr(input_buffer, ' ');\n        if (last_space != NULL) {\n            *last_space = '\\0';\n            char *string_part = input_buffer;\n            char char_part = *(last_space + 1);\n            \n            // Remove quotes if present\n            if (string_part[0] == '\"') {\n                string_part++;\n                int len = strlen(string_part);\n                if (len > 0 && string_part[len-1] == '\"') {\n                    string_part[len-1] = '\\0';\n                }\n            }\n            \n            // Call function\n            {FUNCTION_NAME}(string_part, char_part);\n        }\n    }\n    return 0;\n}\n"
+      },
+      "array_size": {
+        "name": "C Array Size Parser", 
+        "description": "Handles array with size parameter in C",
+        "template": "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n\n{STUDENT_CODE}\n\nint main() {\n    char input_buffer[10000];\n    if (fgets(input_buffer, sizeof(input_buffer), stdin) != NULL) {\n        // Remove newline\n        input_buffer[strcspn(input_buffer, \"\\n\")] = 0;\n        \n        // Parse array\n        int numbers[1000];\n        int count = 0;\n        char *token = strtok(input_buffer, \" ,\");\n        \n        while (token != NULL && count < 1000) {\n            numbers[count++] = atoi(token);\n            token = strtok(NULL, \" ,\");\n        }\n        \n        // Call function\n        {FUNCTION_NAME}(numbers, count);\n    }\n    return 0;\n}\n"
+      },
+      "single_value": {
+        "name": "C Single Value Parser",
+        "description": "Handles single integer input in C",
+        "template": "#include <stdio.h>\n#include <stdlib.h>\n#include <math.h>\n\n{STUDENT_CODE}\n\nint main() {\n    int value;\n    if (scanf(\"%d\", &value) == 1) {\n        {FUNCTION_NAME}(value);\n    }\n    return 0;\n}\n"
+      },
+      "array": {
+        "name": "C Array Parser",
+        "description": "Handles array input with space or comma separation",
+        "template": "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n\n{STUDENT_CODE}\n\nint main() {\n    char input_buffer[10000];\n    if (fgets(input_buffer, sizeof(input_buffer), stdin) != NULL) {\n        // Remove newline\n        input_buffer[strcspn(input_buffer, \"\\n\")] = 0;\n        \n        // Parse array\n        int numbers[1000];\n        int count = 0;\n        char *token = strtok(input_buffer, \" ,\");\n        \n        while (token != NULL && count < 1000) {\n            numbers[count++] = atoi(token);\n            token = strtok(NULL, \" ,\");\n        }\n        \n        // Call function - try both signatures\n        {FUNCTION_NAME}(numbers, count);\n    }\n    return 0;\n}\n"
+      }
+    },
+    "cpp": {
+      "array_size": {
+        "name": "C++ Array Size Parser",
+        "description": "Handles array with size parameter in C++",
+        "template": "#include <iostream>\n#include <vector>\n#include <sstream>\n#include <string>\nusing namespace std;\n\n{STUDENT_CODE}\n\nint main() {\n    string input_line;\n    getline(cin, input_line);\n    \n    // Parse array\n    istringstream iss(input_line);\n    vector<int> numbers;\n    int num;\n    \n    while (iss >> num) {\n        numbers.push_back(num);\n    }\n    \n    // Call function\n    {FUNCTION_NAME}(numbers, numbers.size());\n    \n    return 0;\n}\n"
+      },
+      "single_value": {
+        "name": "C++ Single Value Parser",
+        "description": "Handles single value input in C++",
+        "template": "#include <iostream>\nusing namespace std;\n\n{STUDENT_CODE}\n\nint main() {\n    int value;\n    cin >> value;\n    {FUNCTION_NAME}(value);\n    return 0;\n}\n"
+      },
+      "array": {
+        "name": "C++ Array Parser",
+        "description": "Handles array input with space or comma separation",
+        "template": "#include <iostream>\n#include <sstream>\n#include <string>\n#include <algorithm>\nusing namespace std;\n\n{STUDENT_CODE}\n\nint main() {\n    string input_line;\n    getline(cin, input_line);\n    \n    // Replace commas with spaces\n    replace(input_line.begin(), input_line.end(), ',', ' ');\n    \n    // Parse array\n    istringstream iss(input_line);\n    int numbers[1000];\n    int count = 0;\n    int num;\n    \n    while (iss >> num && count < 1000) {\n        numbers[count++] = num;\n    }\n    \n    // Call function\n    {FUNCTION_NAME}(numbers, count);\n    \n    return 0;\n}\n"
+      }
+    },
+    "java": {
+      "array_size": {
+        "name": "Java Array Size Parser",
+        "description": "Handles array with size parameter in Java",
+        "template": "import java.util.*;\n\npublic class Solution {\n    {STUDENT_CODE}\n    \n    public static void main(String[] args) {\n        try {\n            Scanner scanner = new Scanner(System.in);\n            String inputLine = scanner.nextLine();\n            \n            // Parse array - handle comma and space separated values\n            String[] parts = inputLine.trim().replaceAll(\"[,\\\\s]+\", \" \").trim().split(\"\\\\s+\");\n            java.util.List<Integer> numbersList = new java.util.ArrayList<>();\n            \n            for (String part : parts) {\n                String trimmed = part.trim();\n                if (!trimmed.isEmpty()) {\n                    try {\n                        numbersList.add(Integer.parseInt(trimmed));\n                    } catch (NumberFormatException e) {\n                        // Skip invalid numbers\n                    }\n                }\n            }\n            \n            int[] numbers = numbersList.stream().mapToInt(i -> i).toArray();\n            \n            Solution solution = new Solution();\n            solution.{FUNCTION_NAME}(numbers, numbers.length);\n            \n        } catch (Exception e) {\n            System.out.println(\"Error: \" + e.getMessage());\n        }\n    }\n}\n"
+      },
+      "single_value": {
+        "name": "Java Single Value Parser",
+        "description": "Handles single value input in Java",
+        "template": "import java.util.*;\n\npublic class Solution {\n    {STUDENT_CODE}\n    \n    public static void main(String[] args) {\n        try {\n            Scanner scanner = new Scanner(System.in);\n            int value = scanner.nextInt();\n            \n            Solution solution = new Solution();\n            solution.{FUNCTION_NAME}(value);\n        } catch (Exception e) {\n            System.out.println(\"Error: \" + e.getMessage());\n        }\n    }\n}\n"
+      },
+      "array": {
+        "name": "Java Array Parser",
+        "description": "Handles array input with space or comma separation",
+        "template": "import java.util.*;\n\npublic class Solution {\n    {STUDENT_CODE}\n    \n    public static void main(String[] args) {\n        try {\n            Scanner scanner = new Scanner(System.in);\n            String inputLine = scanner.nextLine();\n            \n            // Parse array - handle comma and space separated values\n            String[] parts = inputLine.trim().replaceAll(\"[,\\\\s]+\", \" \").trim().split(\"\\\\s+\");\n            java.util.List<Integer> numbersList = new java.util.ArrayList<>();\n            \n            for (String part : parts) {\n                String trimmed = part.trim();\n                if (!trimmed.isEmpty()) {\n                    try {\n                        numbersList.add(Integer.parseInt(trimmed));\n                    } catch (NumberFormatException e) {\n                        // Skip invalid numbers\n                    }\n                }\n            }\n            \n            int[] numbers = numbersList.stream().mapToInt(i -> i).toArray();\n            \n            Solution solution = new Solution();\n            solution.{FUNCTION_NAME}(numbers, numbers.length);\n            \n        } catch (Exception e) {\n            System.out.println(\"Error: \" + e.getMessage());\n        }\n    }\n}\n"
+      }
+    }
+  },
+  "patternRules": [
+    {
+      "name": "string_char_detection",
+      "description": "Detect string + character pattern",
+      "conditions": [
+        {
+          "type": "parameter_pattern",
+          "regex": ".*char.*\\*.*char.*"
+        },
+        {
+          "type": "function_name",
+          "contains": ["count", "char"]
+        },
+        {
+          "type": "test_input_pattern",
+          "regex": "\\\".*\\\"\\s+."
+        }
+      ]
+    },
+    {
+      "name": "array_detection",
+      "description": "Detect array pattern",
+      "conditions": [
+        {
+          "type": "parameter_pattern",
+          "regex": ".*\\[\\].*|.*list.*|.*array.*"
+        },
+        {
+          "type": "test_input_pattern",
+          "regex": "\\d+(\\s*,?\\s*\\d+)+"
+        }
+      ]
+    },
+    {
+      "name": "array_size_detection", 
+      "description": "Detect array + size pattern",
+      "conditions": [
+        {
+          "type": "parameter_pattern",
+          "regex": ".*int.*\\[\\].*int.*"
+        },
+        {
+          "type": "function_name",
+          "contains": ["array", "sort", "search", "inSoLe"]
+        },
+        {
+          "type": "test_input_pattern",
+          "regex": "\\d+\\s+\\d+.*"
+        }
+      ]
+    },
+    {
+      "name": "single_value_detection",
+      "description": "Detect single value input",
+      "conditions": [
+        {
+          "type": "parameter_count",
+          "equals": 1
+        },
+        {
+          "type": "parameter_pattern", 
+          "regex": "int|double|float"
+        }
+      ]
+    }
+  ],
+  "fallbackStrategies": {
+    "python": "import sys\nimport io\n\n# Capture any output during import and discard it\nold_stdout = sys.stdout\nsys.stdout = io.StringIO()\n\n{STUDENT_CODE}\n\n# Restore stdout\nsys.stdout = old_stdout\n\nif __name__ == '__main__':\n    try:\n        input_line = input().strip()\n        \n        # Find user function safely\n        user_function = None\n        globals_snapshot = list(globals().items())\n        for name, obj in globals_snapshot:\n            if (callable(obj) and hasattr(obj, '__code__') and \n                not name.startswith('_') and \n                name not in ['input', 'print', 'len', 'range', 'int', 'float', 'str', 'globals_snapshot', 'sys', 'io', 'old_stdout']):\n                user_function = obj\n                break\n        \n        # Parse and call function directly\n        try:\n            # Try as array first\n            parts = input_line.replace(',', ' ').split()\n            numbers = [int(x) for x in parts if x.strip()]\n            \n            if user_function:\n                try:\n                    user_function(numbers, len(numbers))\n                except TypeError:\n                    user_function(numbers)\n            else:\n                try:\n                    {FUNCTION_NAME}(numbers, len(numbers))\n                except:\n                    {FUNCTION_NAME}(numbers)\n        except:\n            # Fallback to string\n            if user_function:\n                user_function(input_line)\n            else:\n                {FUNCTION_NAME}(input_line)\n    except Exception as e:\n        print(f'Error: {e}')\n        sys.exit(1)\n",
+    "c": "#include <stdio.h>\n#include <math.h>\n{STUDENT_CODE}\nint main() {\n    printf(\"Fallback C wrapper\\n\");\n    return 0;\n}\n",
+    "cpp": "#include <iostream>\nusing namespace std;\n{STUDENT_CODE}\nint main() {\n    cout << \"Fallback C++ wrapper\" << endl;\n    return 0;\n}\n",
+    "java": "import java.util.*;\npublic class Solution {\n    {STUDENT_CODE}\n    public static void main(String[] args) {\n        try {\n            Scanner scanner = new Scanner(System.in);\n            String inputLine = scanner.nextLine();\n            \n            // Parse array - handle comma and space separated values\n            String[] parts = inputLine.trim().replaceAll(\"[,\\\\s]+\", \" \").trim().split(\"\\\\s+\");\n            java.util.List<Integer> numbersList = new java.util.ArrayList<>();\n            \n            for (String part : parts) {\n                String trimmed = part.trim();\n                if (!trimmed.isEmpty()) {\n                    try {\n                        numbersList.add(Integer.parseInt(trimmed));\n                    } catch (NumberFormatException e) {\n                        // Skip invalid numbers\n                    }\n                }\n            }\n            \n            int[] numbers = numbersList.stream().mapToInt(i -> i).toArray();\n            \n            Solution solution = new Solution();\n            solution.{FUNCTION_NAME}(numbers, numbers.length);\n            \n        } catch (Exception e) {\n            System.out.println(\"Error: \" + e.getMessage());\n        }\n    }\n}\n"
+  }
+}

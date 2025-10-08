@@ -10,7 +10,7 @@ import { UserService } from "@/services/user.service";
 import { CourseService } from "@/services/course.service";
 import { Role } from "@/types/auth";
 import { Toaster } from "react-hot-toast";
-import MainLayout from "@/components/layouts/MainLayout";
+import AdminLayout from "@/components/layouts/AdminLayout";
 import Image from "next/image";
 
 interface DashboardStats {
@@ -214,12 +214,12 @@ export default function AdminDashboard() {
   }
 
   return (
-    <MainLayout>
-      <div className="min-h-screen bg-slate-50">
+    <AdminLayout>
+      <div className="h-full bg-slate-50">
         <Toaster position="top-right" />
-        <div className="max-w-7xl mx-auto px-4 py-8">
+        <div className="max-w-7xl mx-auto px-4 py-4">
           {/* Header */}
-          <div className="mb-8">
+          <div className="mb-4">
             <h1 className="text-3xl font-bold text-slate-900 mb-2">
               Bảng điều khiển Quản trị viên
             </h1>
@@ -242,7 +242,7 @@ export default function AdminDashboard() {
           )}
 
           {/* Tabs */}
-          <div className="border-b border-slate-200 mb-8">
+          <div className="border-b border-slate-200 mb-4">
             <nav className="-mb-px flex space-x-8">
               {tabs.map((tab) => (
                 <button
@@ -287,6 +287,6 @@ export default function AdminDashboard() {
           />
         </div>
       </div>
-    </MainLayout>
+    </AdminLayout>
   );
 }

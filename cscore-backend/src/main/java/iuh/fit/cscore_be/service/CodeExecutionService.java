@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import java.io.*;
 import java.nio.file.*;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.*;
@@ -159,7 +160,7 @@ public class CodeExecutionService {
                 log.debug("Executing test case {} of {}", i + 1, testCases.size());
                 
                 try {
-                    TestResultResponse testResult = executeTestCase(executableCode, language, testCase, workDir);
+                    TestResultResponse testResult = executeTestCase(code, executableCode, language, testCase, workDir);
                     testResults.add(testResult);
                     
                     // Update statistics
@@ -212,7 +213,7 @@ public class CodeExecutionService {
         return response;
     }
 
-    private TestResultResponse executeTestCase(String code, String language, TestCase testCase, Path workDir) {
+    private TestResultResponse executeTestCase(String rawCode, String wrappedCode, String language, TestCase testCase, Path workDir) {
         TestResultResponse result = new TestResultResponse();
         result.setTestCaseId(testCase.getId());
         result.setInput(testCase.getInput());
@@ -221,11 +222,25 @@ public class CodeExecutionService {
         try {
             long startTime = System.currentTimeMillis();
             
-            // Preprocess input to handle escaped quotes and formatting
-            String processedInput = preprocessTestInput(testCase.getInput());
-            log.debug("Original input: '{}', Processed input: '{}'", testCase.getInput(), processedInput);
+            String output;
             
-            String output = executeCodeWithInput(code, language, processedInput, workDir, testCase.getTimeLimit());
+            // If testCode is provided, use it to create complete executable code
+            if (testCase.getTestCode() != null && !testCase.getTestCode().trim().isEmpty()) {
+                log.debug("Using testCode for test case: {}", testCase.getId());
+                
+                // Combine raw student code with test code (not wrapped code)
+                String executableCode = combineStudentCodeWithTestCode(rawCode, testCase.getTestCode(), language);
+                log.debug("Generated executable code:\n{}", executableCode);
+                
+                // Execute the combined code without additional input (testCode contains the test logic)
+                output = executeCodeWithInput(executableCode, language, "", workDir, testCase.getTimeLimit());
+            } else {
+                // Fallback: use traditional input-based testing with wrapped code
+                String processedInput = preprocessTestInput(testCase.getInput());
+                log.debug("Original input: '{}', Processed input: '{}'", testCase.getInput(), processedInput);
+                
+                output = executeCodeWithInput(wrappedCode, language, processedInput, workDir, testCase.getTimeLimit());
+            }
             
             long executionTime = System.currentTimeMillis() - startTime;
             result.setExecutionTime(executionTime);
@@ -513,6 +528,23 @@ public class CodeExecutionService {
                 try {
                     String sourceCode = new String(Files.readAllBytes(cFile), java.nio.charset.StandardCharsets.UTF_8);
                     log.error("Source code that failed to compile:\n{}", sourceCode);
+                    log.error("Compiler used: {}", usedCompiler);
+                    log.error("Working directory: {}", workDir.toAbsolutePath());
+                    log.error("GCC executable path: {}", usedCompiler);
+                    
+                    // Test if GCC is actually accessible
+                    try {
+                        ProcessBuilder testPb = new ProcessBuilder(usedCompiler, "--version");
+                        Process testProcess = testPb.start();
+                        int testExitCode = testProcess.waitFor();
+                        if (testExitCode == 0) {
+                            log.info("GCC version check successful");
+                        } else {
+                            log.error("GCC version check failed with exit code: {}", testExitCode);
+                        }
+                    } catch (Exception e) {
+                        log.error("Cannot execute GCC for version check: {}", e.getMessage());
+                    }
                 } catch (Exception e) {
                     log.warn("Could not read source file for debugging", e);
                 }
@@ -779,6 +811,23 @@ public class CodeExecutionService {
             try {
                 String sourceCode = new String(Files.readAllBytes(cFile), java.nio.charset.StandardCharsets.UTF_8);
                 log.error("Source code that failed to compile:\n{}", sourceCode);
+                log.error("Compiler used: {}", usedCompiler);
+                log.error("Working directory: {}", workDir.toAbsolutePath());
+                log.error("GCC executable path: {}", usedCompiler);
+                
+                // Test if GCC is actually accessible
+                try {
+                    ProcessBuilder testPb = new ProcessBuilder(usedCompiler, "--version");
+                    Process testProcess = testPb.start();
+                    int testExitCode = testProcess.waitFor();
+                    if (testExitCode == 0) {
+                        log.info("GCC version check successful in executeCWithInput");
+                    } else {
+                        log.error("GCC version check failed in executeCWithInput with exit code: {}", testExitCode);
+                    }
+                } catch (Exception e) {
+                    log.error("Cannot execute GCC for version check in executeCWithInput: {}", e.getMessage());
+                }
             } catch (Exception e) {
                 log.warn("Could not read source file for debugging", e);
             }
@@ -956,13 +1005,20 @@ public class CodeExecutionService {
             String currentPath = env.get("PATH");
             if (currentPath == null) currentPath = "";
             
-            // Add MSYS2 bin directories to PATH
+            // Add MSYS2 bin directories to PATH - ensure proper order
             String msys2Paths = "C:\\msys64\\ucrt64\\bin;C:\\msys64\\mingw64\\bin;C:\\msys64\\usr\\bin";
             if (!currentPath.isEmpty()) {
                 env.put("PATH", msys2Paths + ";" + currentPath);
             } else {
                 env.put("PATH", msys2Paths);
             }
+            
+            // Set additional environment variables for GCC on Windows
+            env.put("MSYSTEM", "UCRT64");
+            env.put("CC", "gcc");
+            env.put("CXX", "g++");
+            
+            log.debug("Set environment PATH for GCC: {}", env.get("PATH"));
         } else {
             // Linux/Unix/Mac - standard compilation with math library
             pb = new ProcessBuilder(gccPath, "-o", outputPath, sourcePath, "-lm");
@@ -981,25 +1037,149 @@ public class CodeExecutionService {
     }
     
     /**
+     * Pre-compile C code
+     */
+    private void preCompileC(String code, Path workDir) throws CompilationException {
+        log.info("Pre-compiling C code in directory: {}", workDir);
+        try {
+            // Write C file with UTF-8 encoding
+            Path cFile = workDir.resolve("solution.c");
+            Files.write(cFile, code.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            log.debug("Written C source file: {}", cFile);
+            
+            Path executable = workDir.resolve("solution.exe");
+
+            // Get C compiler command based on OS
+            String[] compilerCommands = getCCompilerCommands();
+            log.debug("Available C compiler commands: {}", Arrays.toString(compilerCommands));
+            
+            ProcessBuilder compileBuilder = null;
+            String usedCompiler = null;
+            
+            for (String compilerCmd : compilerCommands) {
+                try {
+                    compileBuilder = createGccCompileCommand(compilerCmd, executable.toString(), cFile.toString(), workDir);
+                    compileBuilder.directory(workDir.toFile());
+                    usedCompiler = compilerCmd;
+                    log.debug("Successfully created compile command using: {}", compilerCmd);
+                    break;
+                } catch (Exception e) {
+                    log.debug("C compiler {} not available: {}", compilerCmd, e.getMessage());
+                    continue;
+                }
+            }
+            
+            if (compileBuilder == null) {
+                throw new CompilationException("GCC compiler không được cài đặt hoặc không tìm thấy trong PATH");
+            }
+            
+            log.info("Using C compiler for pre-compilation: {}", usedCompiler);
+            
+            Process compileProcess = compileBuilder.start();
+            
+            // Read streams immediately to prevent blocking
+            StringBuilder compileStdout = new StringBuilder();
+            StringBuilder compileStderr = new StringBuilder();
+            
+            // Start threads to read stdout and stderr concurrently
+            Thread stdoutReader = new Thread(() -> {
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(compileProcess.getInputStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        compileStdout.append(line).append("\n");
+                    }
+                } catch (IOException e) {
+                    log.warn("Error reading compilation stdout", e);
+                }
+            });
+            
+            Thread stderrReader = new Thread(() -> {
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(compileProcess.getErrorStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        compileStderr.append(line).append("\n");
+                    }
+                } catch (IOException e) {
+                    log.warn("Error reading compilation stderr", e);
+                }
+            });
+            
+            stdoutReader.start();
+            stderrReader.start();
+            
+            int compileExitCode = compileProcess.waitFor();
+            
+            // Wait for stream readers to complete
+            try {
+                stdoutReader.join(5000); // 5 second timeout
+                stderrReader.join(5000);
+            } catch (InterruptedException e) {
+                log.warn("Interrupted while waiting for stream readers");
+            }
+            
+            if (compileExitCode != 0) {
+                String stdoutStr = compileStdout.toString().trim();
+                String stderrStr = compileStderr.toString().trim();
+                
+                String errorMessage = "C compilation failed (Exit Code: " + compileExitCode + ")";
+                if (!stderrStr.isEmpty()) {
+                    errorMessage += "\nCompilation Error: " + stderrStr;
+                }
+                if (!stdoutStr.isEmpty()) {
+                    errorMessage += "\nCompilation Output: " + stdoutStr;
+                }
+                
+                // Log the actual source code being compiled for debugging
+                try {
+                    String sourceCode = new String(Files.readAllBytes(cFile), java.nio.charset.StandardCharsets.UTF_8);
+                    log.error("Source code that failed to compile:\n{}", sourceCode);
+                } catch (Exception e) {
+                    log.warn("Could not read source file for debugging", e);
+                }
+                
+                log.error("C pre-compilation failed: {}", errorMessage);
+                throw new CompilationException("C compilation failed with all available compilers: " + errorMessage);
+            }
+            
+            log.info("C pre-compilation completed successfully using: {}", usedCompiler);
+            
+        } catch (CompilationException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Error during C pre-compilation: {}", e.getMessage(), e);
+            throw new CompilationException("Error during C pre-compilation: " + e.getMessage(), e);
+        }
+    }
+    
+    /**
      * Pre-compile code for compiled languages
      */
     private void preCompileCode(String code, String language, Path workDir) throws CompilationException {
+        log.info("Starting pre-compilation for language: {} in directory: {}", language, workDir);
         try {
             switch (language.toLowerCase()) {
                 case "java":
+                    log.debug("Pre-compiling Java code");
                     preCompileJava(code, workDir);
                     break;
                 case "c":
+                    log.debug("Pre-compiling C code");
                     preCompileC(code, workDir);
                     break;
                 case "cpp", "c++":
+                    log.debug("Pre-compiling C++ code");
                     preCompileCpp(code, workDir);
                     break;
                 default:
-                    // No pre-compilation needed
+                    log.debug("No pre-compilation needed for language: {}", language);
                     break;
             }
+            log.info("Pre-compilation completed successfully for language: {}", language);
+        } catch (CompilationException e) {
+            log.error("Pre-compilation failed for language {}: {}", language, e.getMessage(), e);
+            throw e;
         } catch (Exception e) {
+            log.error("Unexpected error during pre-compilation for language {}: {}", language, e.getMessage(), e);
             throw new CompilationException("Pre-compilation failed: " + e.getMessage(), e);
         }
     }
@@ -1030,38 +1210,6 @@ public class CodeExecutionService {
             String errorMessage = readErrorStream(compileProcess);
             throw new CompilationException("Java compilation failed: " + errorMessage);
         }
-    }
-    
-    /**
-     * Pre-compile C code
-     */
-    private void preCompileC(String code, Path workDir) throws Exception {
-        Path cFile = workDir.resolve("solution.c");
-        Files.write(cFile, code.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        
-        Path executable = workDir.resolve("solution.exe");
-        String[] compilerCommands = getCCompilerCommands();
-        
-        for (String compilerCmd : compilerCommands) {
-            try {
-                ProcessBuilder compileBuilder = createGccCompileCommand(compilerCmd, executable.toString(), cFile.toString(), workDir);
-                Process compileProcess = compileBuilder.start();
-                
-                boolean finished = compileProcess.waitFor(COMPILATION_TIMEOUT, TimeUnit.SECONDS);
-                if (!finished) {
-                    compileProcess.destroyForcibly();
-                    throw new CompilationException("C compilation timeout");
-                }
-                
-                if (compileProcess.exitValue() == 0) {
-                    return; // Compilation successful
-                }
-            } catch (Exception e) {
-                log.debug("Failed with compiler {}: {}", compilerCmd, e.getMessage());
-            }
-        }
-        
-        throw new CompilationException("C compilation failed with all available compilers");
     }
     
     /**
@@ -1116,6 +1264,67 @@ public class CodeExecutionService {
         if (output.length() <= MAX_OUTPUT_LENGTH) return output;
         
         return output.substring(0, MAX_OUTPUT_LENGTH) + "\n... (output truncated)";
+    }
+    
+    /**
+     * Combine student function code with teacher's test code
+     */
+    private String combineStudentCodeWithTestCode(String studentCode, String testCode, String language) {
+        log.debug("Combining student code with test code for language: {}", language);
+        
+        switch (language.toLowerCase()) {
+            case "c":
+                // Check if testCode already has main function
+                if (testCode.contains("int main") || testCode.contains("void main")) {
+                    // TestCode has complete main function, just combine
+                    return "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n\n" +
+                           studentCode + "\n\n" + testCode;
+                } else {
+                    // TestCode is just code snippet, wrap it in main function
+                    return "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n\n" +
+                           studentCode + "\n\n" +
+                           "int main() {\n" +
+                           "    " + testCode.replace("\n", "\n    ") + "\n" +
+                           "    return 0;\n" +
+                           "}";
+                }
+                       
+            case "cpp":
+            case "c++":
+                // Check if testCode already has main function
+                if (testCode.contains("int main") || testCode.contains("void main")) {
+                    return "#include <iostream>\n#include <string>\n#include <cstring>\n#include <cmath>\n#include <vector>\n#include <algorithm>\nusing namespace std;\n\n" +
+                           studentCode + "\n\n" + testCode;
+                } else {
+                    return "#include <iostream>\n#include <string>\n#include <cstring>\n#include <cmath>\n#include <vector>\n#include <algorithm>\nusing namespace std;\n\n" +
+                           studentCode + "\n\n" +
+                           "int main() {\n" +
+                           "    " + testCode.replace("\n", "\n    ") + "\n" +
+                           "    return 0;\n" +
+                           "}";
+                }
+                       
+            case "java":
+                // For Java, wrap everything in a class if not already wrapped
+                if (!testCode.contains("class") && !testCode.contains("public static void main")) {
+                    return "import java.util.*;\n\npublic class Solution {\n" +
+                           "    " + studentCode.replace("\n", "\n    ") + "\n\n" +
+                           "    public static void main(String[] args) {\n" +
+                           "        " + testCode.replace("\n", "\n        ") + "\n" +
+                           "    }\n" +
+                           "}";
+                } else {
+                    // TestCode already contains class structure
+                    return studentCode + "\n\n" + testCode;
+                }
+                
+            case "python":
+                return studentCode + "\n\n" + testCode;
+                
+            default:
+                log.warn("Unknown language for code combination: {}", language);
+                return studentCode + "\n\n" + testCode;
+        }
     }
     
     /**

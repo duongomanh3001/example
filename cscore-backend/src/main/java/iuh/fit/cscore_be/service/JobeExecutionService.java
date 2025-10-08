@@ -86,10 +86,16 @@ public class JobeExecutionService {
 
         try {
             log.info("Executing code with input via Jobe server - Language: {}", language);
+            log.debug("Code to execute: {}", code);
+            log.debug("Input: {}", input);
             
             // Create request for Jobe server with input
             Map<String, Object> requestBody = new HashMap<>();
-            requestBody.put("run_spec", createJobeRequest(code, language, input));
+            Map<String, Object> runSpec = createJobeRequest(code, language, input);
+            requestBody.put("run_spec", runSpec);
+            
+            log.info("Jobe request for language {}: {}", language, requestBody);
+            log.info("Run spec details: {}", runSpec);
             
             // Send request to Jobe server
             HttpHeaders headers = new HttpHeaders();
@@ -100,7 +106,14 @@ public class JobeExecutionService {
             String url = jobeServerUrl + "/jobe/index.php/restapi/runs";
             ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
             
-            return parseJobeResponse(response.getBody(), language);
+            log.debug("Jobe response status: {}", response.getStatusCode());
+            log.debug("Jobe response body: {}", response.getBody());
+            
+            CodeExecutionResponse result = parseJobeResponse(response.getBody(), language);
+            log.info("Execution result - Success: {}, Output: '{}', Error: '{}'", 
+                    result.isSuccess(), result.getOutput(), result.getError());
+            
+            return result;
             
         } catch (Exception e) {
             log.error("Error executing code with input via Jobe server", e);
@@ -274,12 +287,37 @@ public class JobeExecutionService {
         parameters.put("cputime", 30);  // CPU time limit in seconds
         parameters.put("memorylimit", 256000);  // Memory limit in KB
         
-        // Add compile parameters for C to include math library
+        request.put("parameters", parameters);
+        
+        // Add compilation and linking arguments for C to include math library
         if ("c".equals(jobeLanguageId)) {
+            // Try multiple approaches for math library linking
+            List<String> compileArgs = Arrays.asList("-std=c99", "-lm");
+            List<String> linkArgs = Arrays.asList("-lm");
+            
+            request.put("compileargs", compileArgs);
+            request.put("linkargs", linkArgs);
+            
+            // Also try compileparams (some Jobe versions use this)
             parameters.put("compileparams", "-lm");
+            
+            log.debug("Added math library linking for C: compileargs={}, linkargs={}, compileparams=-lm", 
+                     compileArgs, linkArgs);
         }
         
-        request.put("parameters", parameters);
+        // Also add for C++
+        if ("cpp".equals(jobeLanguageId)) {
+            List<String> compileArgs = Arrays.asList("-std=c++11", "-lm");
+            List<String> linkArgs = Arrays.asList("-lm");
+            
+            request.put("compileargs", compileArgs);
+            request.put("linkargs", linkArgs);
+            
+            parameters.put("compileparams", "-lm");
+            
+            log.debug("Added math library linking for C++: compileargs={}, linkargs={}, compileparams=-lm", 
+                     compileArgs, linkArgs);
+        }
         
         // Set input if provided
         if (input != null && !input.trim().isEmpty()) {
@@ -345,36 +383,97 @@ public class JobeExecutionService {
         response.setLanguage(language);
         
         try {
+            log.debug("Raw Jobe response: {}", jobeResponseBody);
             JsonNode jobeResult = objectMapper.readTree(jobeResponseBody);
             
             if (jobeResult.has("outcome")) {
                 int outcome = jobeResult.get("outcome").asInt();
+                log.debug("Jobe outcome: {}", outcome);
                 
+                // Jobe outcome codes:
+                // 15 = Successful execution
+                // 11 = Compilation failed  
+                // 12 = Runtime error
+                // 13 = Time limit exceeded
+                // 17 = Memory limit exceeded
+                // 19 = Illegal function call
+                // 20 = Other
                 if (outcome == 15) { // Success
                     response.setSuccess(true);
-                    response.setOutput(jobeResult.has("stdout") ? jobeResult.get("stdout").asText() : "");
+                    String stdout = jobeResult.has("stdout") ? jobeResult.get("stdout").asText() : "";
+                    response.setOutput(stdout);
                     
+                    // Handle stderr - filter out debug messages but keep real errors
                     if (jobeResult.has("stderr") && !jobeResult.get("stderr").asText().isEmpty()) {
-                        response.setError(jobeResult.get("stderr").asText());
+                        String stderr = jobeResult.get("stderr").asText();
+                        // Filter out debug messages from Jobe wrapper
+                        String filteredStderr = filterDebugMessages(stderr);
+                        if (!filteredStderr.isEmpty()) {
+                            response.setError(filteredStderr);
+                        }
+                    }
+                    
+                } else if (outcome == 11) { // Compilation failed
+                    response.setSuccess(false);
+                    
+                    String compilationError = "Compilation failed";
+                    if (jobeResult.has("cmpinfo")) {
+                        compilationError = jobeResult.get("cmpinfo").asText();
+                    }
+                    response.setCompilationError(compilationError);
+                    response.setError(compilationError);
+                    
+                } else if (outcome == 12) { // Runtime error
+                    response.setSuccess(false);
+                    
+                    String runtimeError = "Runtime error occurred";
+                    if (jobeResult.has("stderr") && !jobeResult.get("stderr").asText().isEmpty()) {
+                        String stderr = jobeResult.get("stderr").asText();
+                        String filteredStderr = filterDebugMessages(stderr);
+                        if (!filteredStderr.isEmpty()) {
+                            runtimeError = filteredStderr;
+                        }
+                    }
+                    response.setError(runtimeError);
+                    
+                    // Set output if available even for runtime errors
+                    if (jobeResult.has("stdout")) {
+                        response.setOutput(jobeResult.get("stdout").asText());
                     }
                     
                 } else {
-                    // Execution failed
-                    response.setSuccess(false);
+                    // Other execution outcomes - could still be successful in some cases
+                    // Check if we have valid output despite non-15 outcome
+                    boolean hasOutput = jobeResult.has("stdout") && 
+                                       !jobeResult.get("stdout").asText().trim().isEmpty();
                     
-                    String error = "Execution failed";
+                    if (hasOutput && (outcome == 0 || outcome == 20)) {
+                        // Sometimes Jobe returns outcome 0 or 20 for successful execution
+                        response.setSuccess(true);
+                        response.setOutput(jobeResult.get("stdout").asText());
+                    } else {
+                        response.setSuccess(false);
+                    }
+                    
+                    String error = "Execution completed with outcome: " + outcome;
                     if (jobeResult.has("stderr")) {
-                        error = jobeResult.get("stderr").asText();
+                        String stderr = jobeResult.get("stderr").asText();
+                        String filteredStderr = filterDebugMessages(stderr);
+                        if (!filteredStderr.isEmpty()) {
+                            error = filteredStderr;
+                        }
                     } else if (jobeResult.has("cmpinfo")) {
                         error = "Compilation error: " + jobeResult.get("cmpinfo").asText();
                         response.setCompilationError(error);
                     }
                     
-                    response.setError(error);
+                    if (!response.isSuccess()) {
+                        response.setError(error);
+                    }
                 }
             } else {
                 response.setSuccess(false);
-                response.setError("Invalid response from Jobe server");
+                response.setError("Invalid response from Jobe server - no outcome field");
             }
             
         } catch (Exception e) {
@@ -477,5 +576,31 @@ public class JobeExecutionService {
             log.error("Error getting supported languages from Jobe server", e);
             return Collections.emptyList();
         }
+    }
+
+    /**
+     * Filter out debug messages from stderr
+     */
+    private String filterDebugMessages(String stderr) {
+        if (stderr == null || stderr.trim().isEmpty()) {
+            return "";
+        }
+        
+        // Split by lines and filter out debug messages
+        String[] lines = stderr.split("\n");
+        List<String> filteredLines = new ArrayList<>();
+        
+        for (String line : lines) {
+            // Skip debug messages from Jobe wrapper
+            if (line.startsWith("Debug - Generated wrapper code:") ||
+                line.contains("Generated wrapper code:") ||
+                line.startsWith("Debug -") ||
+                line.trim().isEmpty()) {
+                continue;
+            }
+            filteredLines.add(line);
+        }
+        
+        return String.join("\n", filteredLines).trim();
     }
 }

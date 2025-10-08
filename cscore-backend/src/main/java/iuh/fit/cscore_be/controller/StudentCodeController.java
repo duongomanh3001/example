@@ -39,7 +39,7 @@ public class StudentCodeController {
                 request.getCode(), 
                 request.getLanguage(),
                 studentId,
-                request.getInput()  // Pass custom input if provided
+                request.getInput()  
             );
             
             return ResponseEntity.ok(result);

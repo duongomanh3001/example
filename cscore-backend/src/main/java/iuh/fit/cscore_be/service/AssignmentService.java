@@ -13,6 +13,7 @@ import iuh.fit.cscore_be.repository.CourseRepository;
 import iuh.fit.cscore_be.repository.SubmissionRepository;
 import iuh.fit.cscore_be.repository.TestCaseRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -32,6 +33,9 @@ public class AssignmentService {
     private final TestCaseRepository testCaseRepository;
     private final SubmissionRepository submissionRepository;
     private final QuestionService questionService;
+    
+    @Autowired
+    private NotificationService notificationService;
     
     public AssignmentResponse createAssignment(AssignmentRequest request, User teacher) {
         Course course = courseRepository.findById(request.getCourseId())
@@ -96,6 +100,27 @@ public class AssignmentService {
         
         // Force reload to get questions
         savedAssignment = assignmentRepository.findById(savedAssignment.getId()).orElse(savedAssignment);
+        
+        // Send notifications
+        try {
+            // Notify the teacher who created the assignment
+            notificationService.createTeacherAssignmentNotification(
+                teacher,
+                savedAssignment.getId(),
+                savedAssignment.getTitle(),
+                course
+            );
+            
+            // Notify all students in the course
+            notificationService.createStudentAssignmentNotification(
+                savedAssignment.getId(),
+                savedAssignment.getTitle(),
+                course
+            );
+        } catch (Exception e) {
+            // Log error but don't fail the assignment creation
+            System.err.println("Failed to send notification for assignment: " + e.getMessage());
+        }
         
         return convertToResponse(savedAssignment);
     }

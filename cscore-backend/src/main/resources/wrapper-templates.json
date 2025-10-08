@@ -41,7 +41,17 @@
       "array": {
         "name": "C Array Parser",
         "description": "Handles array input with space or comma separation",
-        "template": "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n\n{STUDENT_CODE}\n\nint main() {\n    char input_buffer[10000];\n    if (fgets(input_buffer, sizeof(input_buffer), stdin) != NULL) {\n        // Remove newline\n        input_buffer[strcspn(input_buffer, \"\\n\")] = 0;\n        \n        // Parse array\n        int numbers[1000];\n        int count = 0;\n        char *token = strtok(input_buffer, \" ,\");\n        \n        while (token != NULL && count < 1000) {\n            numbers[count++] = atoi(token);\n            token = strtok(NULL, \" ,\");\n        }\n        \n        // Call function - try both signatures\n        {FUNCTION_NAME}(numbers, count);\n    }\n    return 0;\n}\n"
+        "template": "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n\n{STUDENT_CODE}\n\nvoid printArray(int arr[], int size) {\n    for (int i = 0; i < size; i++) {\n        if (i > 0) printf(\" \");\n        printf(\"%d\", arr[i]);\n    }\n    printf(\"\\n\");\n}\n\nint main() {\n    char input_buffer[10000];\n    if (fgets(input_buffer, sizeof(input_buffer), stdin) != NULL) {\n        // Remove newline\n        input_buffer[strcspn(input_buffer, \"\\n\")] = 0;\n        \n        // Parse array\n        int numbers[1000];\n        int count = 0;\n        char *token = strtok(input_buffer, \" ,\");\n        \n        while (token != NULL && count < 1000) {\n            numbers[count++] = atoi(token);\n            token = strtok(NULL, \" ,\");\n        }\n        \n        // Call function with different signatures based on function name\n        if (strstr(\"{FUNCTION_NAME}\", \"quickSort\") != NULL || strstr(\"{FUNCTION_NAME}\", \"QuickSort\") != NULL) {\n            // QuickSort signature: quickSort(array, left, right)\n            {FUNCTION_NAME}(numbers, 0, count - 1);\n            printArray(numbers, count);\n        } else if (strstr(\"{FUNCTION_NAME}\", \"bubbleSort\") != NULL || strstr(\"{FUNCTION_NAME}\", \"BubbleSort\") != NULL) {\n            // BubbleSort signature: bubbleSort(array, size)\n            {FUNCTION_NAME}(numbers, count);\n            printArray(numbers, count);\n        } else if (strstr(\"{FUNCTION_NAME}\", \"Sort\") != NULL || strstr(\"{FUNCTION_NAME}\", \"sort\") != NULL) {\n            // Generic sort signature: sort(array, left, right) or sort(array, size)\n            // Try 3-parameter version first (most common for sorting algorithms)\n            {FUNCTION_NAME}(numbers, 0, count - 1);\n            printArray(numbers, count);\n        } else {\n            // Default: try 2-parameter version\n            {FUNCTION_NAME}(numbers, count);\n        }\n    }\n    return 0;\n}\n"
+      },
+      "quicksort": {
+        "name": "C QuickSort Parser",
+        "description": "Specialized handler for QuickSort algorithm with (array, left, right) signature",
+        "template": "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n\n{STUDENT_CODE}\n\nvoid printArray(int arr[], int size) {\n    for (int i = 0; i < size; i++) {\n        if (i > 0) printf(\" \");\n        printf(\"%d\", arr[i]);\n    }\n    printf(\"\\n\");\n}\n\nint main() {\n    char input_buffer[10000];\n    if (fgets(input_buffer, sizeof(input_buffer), stdin) != NULL) {\n        // Remove newline\n        input_buffer[strcspn(input_buffer, \"\\n\")] = 0;\n        \n        // Parse array\n        int numbers[1000];\n        int count = 0;\n        char *token = strtok(input_buffer, \" ,\");\n        \n        while (token != NULL && count < 1000) {\n            numbers[count++] = atoi(token);\n            token = strtok(NULL, \" ,\");\n        }\n        \n        // QuickSort signature: quickSort(array, left, right)\n        {FUNCTION_NAME}(numbers, 0, count - 1);\n        printArray(numbers, count);\n    }\n    return 0;\n}\n"
+      },
+      "three_float_values": {
+        "name": "C Three Float Values Parser",
+        "description": "Handles three float parameters input in C",
+        "template": "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n\n{STUDENT_CODE}\n\nint main() {\n    char input_buffer[1000];\n    if (fgets(input_buffer, sizeof(input_buffer), stdin) != NULL) {\n        // Remove newline\n        input_buffer[strcspn(input_buffer, \"\\n\")] = 0;\n        \n        // Parse three float values\n        float a, b, c;\n        int parsed = sscanf(input_buffer, \"%f %f %f\", &a, &b, &c);\n        \n        if (parsed == 3) {\n            {FUNCTION_NAME}(a, b, c);\n        } else {\n            // Fallback: try to parse with comma separation\n            char *token1 = strtok(input_buffer, \" ,\");\n            char *token2 = strtok(NULL, \" ,\");\n            char *token3 = strtok(NULL, \" ,\");\n            \n            if (token1 && token2 && token3) {\n                a = atof(token1);\n                b = atof(token2);\n                c = atof(token3);\n                {FUNCTION_NAME}(a, b, c);\n            }\n        }\n    }\n    return 0;\n}\n"
       }
     },
     "cpp": {
@@ -58,7 +68,12 @@
       "array": {
         "name": "C++ Array Parser",
         "description": "Handles array input with space or comma separation",
-        "template": "#include <iostream>\n#include <sstream>\n#include <string>\n#include <algorithm>\nusing namespace std;\n\n{STUDENT_CODE}\n\nint main() {\n    string input_line;\n    getline(cin, input_line);\n    \n    // Replace commas with spaces\n    replace(input_line.begin(), input_line.end(), ',', ' ');\n    \n    // Parse array\n    istringstream iss(input_line);\n    int numbers[1000];\n    int count = 0;\n    int num;\n    \n    while (iss >> num && count < 1000) {\n        numbers[count++] = num;\n    }\n    \n    // Call function\n    {FUNCTION_NAME}(numbers, count);\n    \n    return 0;\n}\n"
+        "template": "#include <iostream>\n#include <sstream>\n#include <string>\n#include <algorithm>\nusing namespace std;\n\n{STUDENT_CODE}\n\nvoid printArray(int arr[], int size) {\n    for (int i = 0; i < size; i++) {\n        if (i > 0) cout << \" \";\n        cout << arr[i];\n    }\n    cout << endl;\n}\n\nint main() {\n    string input_line;\n    getline(cin, input_line);\n    \n    // Replace commas with spaces\n    replace(input_line.begin(), input_line.end(), ',', ' ');\n    \n    // Parse array\n    istringstream iss(input_line);\n    int numbers[1000];\n    int count = 0;\n    int num;\n    \n    while (iss >> num && count < 1000) {\n        numbers[count++] = num;\n    }\n    \n    // Call function with different signatures based on function name\n    string functionName = \"{FUNCTION_NAME}\";\n    if (functionName.find(\"quickSort\") != string::npos || functionName.find(\"QuickSort\") != string::npos) {\n        // QuickSort signature: quickSort(array, left, right)\n        {FUNCTION_NAME}(numbers, 0, count - 1);\n        printArray(numbers, count);\n    } else if (functionName.find(\"bubbleSort\") != string::npos || functionName.find(\"BubbleSort\") != string::npos) {\n        // BubbleSort signature: bubbleSort(array, size)\n        {FUNCTION_NAME}(numbers, count);\n        printArray(numbers, count);\n    } else if (functionName.find(\"Sort\") != string::npos || functionName.find(\"sort\") != string::npos) {\n        // Generic sort signature: sort(array, left, right)\n        {FUNCTION_NAME}(numbers, 0, count - 1);\n        printArray(numbers, count);\n    } else {\n        // Default: try 2-parameter version\n        {FUNCTION_NAME}(numbers, count);\n    }\n    \n    return 0;\n}\n"
+      },
+      "quicksort": {
+        "name": "C++ QuickSort Parser",
+        "description": "Specialized handler for QuickSort algorithm with (array, left, right) signature",
+        "template": "#include <iostream>\n#include <sstream>\n#include <string>\n#include <algorithm>\nusing namespace std;\n\n{STUDENT_CODE}\n\nvoid printArray(int arr[], int size) {\n    for (int i = 0; i < size; i++) {\n        if (i > 0) cout << \" \";\n        cout << arr[i];\n    }\n    cout << endl;\n}\n\nint main() {\n    string input_line;\n    getline(cin, input_line);\n    \n    // Replace commas with spaces\n    replace(input_line.begin(), input_line.end(), ',', ' ');\n    \n    // Parse array\n    istringstream iss(input_line);\n    int numbers[1000];\n    int count = 0;\n    int num;\n    \n    while (iss >> num && count < 1000) {\n        numbers[count++] = num;\n    }\n    \n    // QuickSort signature: quickSort(array, left, right)\n    {FUNCTION_NAME}(numbers, 0, count - 1);\n    printArray(numbers, count);\n    \n    return 0;\n}\n"
       }
     },
     "java": {
@@ -99,8 +114,62 @@
       ]
     },
     {
+      "name": "three_float_detection",
+      "description": "Detect three float parameters pattern",
+      "conditions": [
+        {
+          "type": "parameter_pattern",
+          "regex": ".*float.*float.*float.*|.*double.*double.*double.*"
+        },
+        {
+          "type": "function_name",
+          "contains": ["giai", "solve", "equation", "ptbac"]
+        },
+        {
+          "type": "parameter_count",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "name": "quicksort_detection",
+      "description": "Detect QuickSort algorithm pattern - MUST have exactly 3 parameters",
+      "conditions": [
+        {
+          "type": "parameter_pattern",
+          "regex": ".*int.*\\[\\].*int.*int.*"
+        },
+        {
+          "type": "function_name",
+          "contains": ["quickSort", "QuickSort", "quick_sort"]
+        },
+        {
+          "type": "parameter_count",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "name": "array_size_detection", 
+      "description": "Detect array + size pattern - MUST have exactly 2 parameters",
+      "conditions": [
+        {
+          "type": "parameter_pattern",
+          "regex": ".*int.*\\[\\].*int.*"
+        },
+        {
+          "type": "parameter_count",
+          "value": 2
+        },
+        {
+          "type": "function_name",
+          "contains": ["inSoLe", "print", "display", "show", "output"]
+        }
+      ]
+    },
+    {
       "name": "array_detection",
-      "description": "Detect array pattern",
+      "description": "Detect general array pattern - flexible parameter count",
       "conditions": [
         {
           "type": "parameter_pattern",
@@ -109,24 +178,6 @@
         {
           "type": "test_input_pattern",
           "regex": "\\d+(\\s*,?\\s*\\d+)+"
-        }
-      ]
-    },
-    {
-      "name": "array_size_detection", 
-      "description": "Detect array + size pattern",
-      "conditions": [
-        {
-          "type": "parameter_pattern",
-          "regex": ".*int.*\\[\\].*int.*"
-        },
-        {
-          "type": "function_name",
-          "contains": ["array", "sort", "search", "inSoLe"]
-        },
-        {
-          "type": "test_input_pattern",
-          "regex": "\\d+\\s+\\d+.*"
         }
       ]
     },

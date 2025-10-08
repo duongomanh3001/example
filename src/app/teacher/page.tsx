@@ -9,7 +9,7 @@ import { useRoleAccess } from "@/hooks/useRoleAccess";
 import { CourseService } from "@/services/course.service";
 import { CourseResponse } from "@/types/api";
 import Link from "next/link";
-import MainLayout from "@/components/layouts/MainLayout";
+import TeacherLayout from "@/components/layouts/TeacherLayout";
 
 function TeacherPage() {
   const [currentView, setCurrentView] = useState<'teacher' | 'student'>('teacher');
@@ -90,8 +90,8 @@ function TeacherPage() {
   };
 
   return (
-    <MainLayout>
-      <div className="mx-auto max-w-7xl px-4 py-6">
+    <TeacherLayout>
+      <div className="h-full">
         {/* Header with View Toggle */}
         <div className="mb-6 flex justify-between items-start">
           <div>
@@ -159,10 +159,8 @@ function TeacherPage() {
             </div>
           )}
         </div>
-
-
       </div>
-    </MainLayout>
+    </TeacherLayout>
   );
 }
 

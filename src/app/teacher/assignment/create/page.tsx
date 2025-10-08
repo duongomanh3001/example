@@ -31,7 +31,6 @@ interface Question {
 }
 
 interface EnhancedTestCase extends TestCaseRequest {
-  testCode?: string; // Code segment to run/test the function
   useAsExample?: boolean; // Show to students as example
   isValidated?: boolean; // Whether output was auto-generated
 }
@@ -734,18 +733,23 @@ function CreateAssignmentPage() {
           questionType: q.questionType,
           points: q.points,
           orderIndex: q.orderIndex,
-          testCases: q.testCases,
+          programmingLanguage: q.programmingLanguage,
+          referenceImplementation: q.answerCode,
+          functionName: q.functionName,
+          functionSignature: q.functionSignature,
+          testTemplate: q.testTemplate,
+          testCases: q.testCases.map(tc => ({
+            input: tc.input,
+            expectedOutput: tc.expectedOutput,
+            testCode: tc.testCode,
+            isHidden: tc.isHidden,
+            points: tc.points
+          })),
           options: q.options.map(opt => ({
             optionText: opt.optionText,
             isCorrect: opt.isCorrect,
             orderIndex: opt.orderIndex
-          })),
-          // Enhanced grading fields for programming questions
-          referenceImplementation: q.answerCode,
-          functionName: q.functionName,
-          functionSignature: q.functionSignature,
-          programmingLanguage: q.programmingLanguage,
-          testTemplate: q.testTemplate
+          }))
         }))
       };
 

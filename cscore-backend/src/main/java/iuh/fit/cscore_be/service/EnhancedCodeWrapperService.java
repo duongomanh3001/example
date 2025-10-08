@@ -74,7 +74,7 @@ public class EnhancedCodeWrapperService {
 
     /**
      * Generate intelligent wrapper based on comprehensive analysis
-     * UPDATED: Uses template-driven approach instead of hardcoded generation
+     * UPDATED: Uses template-driven approach with signature-aware selection
      */
     private String generateIntelligentWrapper(String studentCode, Question question, String language,
                                             FunctionSignatureAnalyzer.FunctionAnalysisResult signatureAnalysis,
@@ -83,8 +83,8 @@ public class EnhancedCodeWrapperService {
         log.info("Generating template-based wrapper for language: {}, pattern: {}", 
                 language, testCaseAnalysis.getInputPattern().getType());
         
-        // Find appropriate template based on language and pattern
-        WrapperTemplate template = findBestTemplate(language, testCaseAnalysis.getInputPattern().getType());
+        // Find appropriate template based on language, pattern AND function signature
+        WrapperTemplate template = findBestTemplate(language, testCaseAnalysis.getInputPattern().getType(), signatureAnalysis);
         
         if (template != null) {
             return generateFromTemplate(template, studentCode, signatureAnalysis, testCaseAnalysis);
@@ -96,36 +96,121 @@ public class EnhancedCodeWrapperService {
     }
     
     /**
-     * Find the best template for language and pattern combination
+     * Find the best template for language and pattern combination with function signature consideration
      */
-    private WrapperTemplate findBestTemplate(String language, String patternType) {
-        // Try to find specific template for pattern
+    private WrapperTemplate findBestTemplate(String language, String patternType, 
+                                           FunctionSignatureAnalyzer.FunctionAnalysisResult signatureAnalysis) {
+        
+        // Extract parameter count from function signature
+        int parameterCount = extractParameterCount(signatureAnalysis);
+        String functionName = extractFunctionName(signatureAnalysis);
+        
+        log.info("Template selection: language={}, pattern={}, paramCount={}, function={}", 
+                language, patternType, parameterCount, functionName);
+        
+        // Priority-based template selection
+        // 1. Check for specific function name + parameter count matches
+        if (functionName != null) {
+            WrapperTemplate specificMatch = findTemplateByFunctionSignature(language, functionName, parameterCount);
+            if (specificMatch != null) {
+                log.info("Selected template by function signature: {}", specificMatch.getName());
+                return specificMatch;
+            }
+        }
+        
+        // 2. Try pattern-based selection with parameter count validation
         String specificKey = language.toLowerCase() + "_" + patternType;
         WrapperTemplate specificTemplate = wrapperTemplates.get(specificKey);
         
         if (specificTemplate != null) {
-            log.debug("Found specific template: {}", specificKey);
+            log.info("Found pattern-specific template: {}", specificKey);
             return specificTemplate;
         }
         
-        // Fallback to single_value template if available
+        // 3. Parameter count based fallback selection
+        WrapperTemplate parameterBasedTemplate = findTemplateByParameterCount(language, parameterCount);
+        if (parameterBasedTemplate != null) {
+            log.info("Selected template by parameter count: {}", parameterBasedTemplate.getName());
+            return parameterBasedTemplate;
+        }
+        
+        // 4. Language-specific fallback
         String fallbackKey = language.toLowerCase() + "_single_value";
         WrapperTemplate fallbackTemplate = wrapperTemplates.get(fallbackKey);
         
         if (fallbackTemplate != null) {
-            log.debug("Using fallback template: {}", fallbackKey);
+            log.info("Using fallback template: {}", fallbackKey);
             return fallbackTemplate;
         }
         
-        // Try to find any template for the language
+        // 5. Try to find any template for the language
         for (WrapperTemplate template : wrapperTemplates.values()) {
             if (template.getLanguage().equalsIgnoreCase(language)) {
-                log.debug("Using generic template for language: {}", language);
+                log.info("Using generic template for language: {}", language);
                 return template;
             }
         }
         
         return null;
+    }
+    
+    /**
+     * Find template that matches function name and parameter count exactly
+     */
+    private WrapperTemplate findTemplateByFunctionSignature(String language, String functionName, int paramCount) {
+        // For 2-parameter functions like inSoLe(arr[], int n), prefer array_size template
+        if (paramCount == 2 && functionName.toLowerCase().contains("insole")) {
+            return wrapperTemplates.get(language.toLowerCase() + "_array_size");
+        }
+        
+        // For 3-parameter functions like quickSort(arr[], int left, int right), prefer quicksort template
+        if (paramCount == 3 && (functionName.toLowerCase().contains("quicksort") || 
+                                functionName.toLowerCase().contains("quick_sort"))) {
+            return wrapperTemplates.get(language.toLowerCase() + "_quicksort");
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Find template based on parameter count
+     */
+    private WrapperTemplate findTemplateByParameterCount(String language, int paramCount) {
+        String baseKey = language.toLowerCase();
+        
+        switch (paramCount) {
+            case 1:
+                return wrapperTemplates.get(baseKey + "_single_value");
+            case 2:
+                // Try array_size first, then general array
+                WrapperTemplate arraySize = wrapperTemplates.get(baseKey + "_array_size");
+                if (arraySize != null) return arraySize;
+                return wrapperTemplates.get(baseKey + "_array");
+            case 3:
+                // For 3 parameters, could be quicksort or matrix
+                WrapperTemplate quicksort = wrapperTemplates.get(baseKey + "_quicksort");
+                if (quicksort != null) return quicksort;
+                return wrapperTemplates.get(baseKey + "_array");
+            default:
+                return wrapperTemplates.get(baseKey + "_array");
+        }
+    }
+    
+    /**
+     * Extract parameter count from function signature analysis
+     */
+    private int extractParameterCount(FunctionSignatureAnalyzer.FunctionAnalysisResult signatureAnalysis) {
+        if (signatureAnalysis == null || signatureAnalysis.getFunctionInfo() == null) {
+            return 1; // Default
+        }
+        
+        String parameters = signatureAnalysis.getFunctionInfo().getParameters();
+        if (parameters == null || parameters.trim().isEmpty()) {
+            return 1;
+        }
+        
+        // Count comma-separated parameters
+        return parameters.split(",").length;
     }
     
     /**

@@ -11,6 +11,8 @@ public class TestCaseRequest {
     @NotNull(message = "Kết quả mong đợi không được để trống")
     private String expectedOutput;
     
+    private String testCode;
+    
     private Boolean isHidden = false;
     
     private Double weight = 1.0;

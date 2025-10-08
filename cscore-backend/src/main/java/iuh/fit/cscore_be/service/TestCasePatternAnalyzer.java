@@ -79,7 +79,16 @@ public class TestCasePatternAnalyzer {
             return result;
         }
         
-        // 2. Check for array pattern
+        // 2. Check for three float values pattern FIRST (before array pattern)
+        if (isThreeFloatValuesPattern(firstInput)) {
+            result.setType("three_float_values");
+            result.setDelimiter(detectDelimiter(Arrays.asList(firstInput)));
+            result.setDescription("Three float parameters (e.g., equation coefficients)");
+            result.setParsingHints(Arrays.asList("three_floats", "equation_params"));
+            return result;
+        }
+        
+        // 3. Check for array pattern
         if (isArrayPattern(inputs)) {
             result.setType("array");
             result.setDelimiter(detectDelimiter(inputs));
@@ -88,7 +97,7 @@ public class TestCasePatternAnalyzer {
             return result;
         }
         
-        // 3. Check for matrix pattern
+        // 4. Check for matrix pattern
         if (isMatrixPattern(inputs)) {
             result.setType("matrix");
             result.setDelimiter(" ");
@@ -97,7 +106,7 @@ public class TestCasePatternAnalyzer {
             return result;
         }
         
-        // 4. Check for multiple values pattern
+        // 5. Check for multiple values pattern
         if (isMultipleValuesPattern(firstInput)) {
             result.setType("multiple_values");
             result.setDelimiter(detectDelimiter(Arrays.asList(firstInput)));
@@ -106,7 +115,7 @@ public class TestCasePatternAnalyzer {
             return result;
         }
         
-        // 5. Default to single value
+        // 6. Default to single value
         result.setType("single_value");
         result.setDelimiter("");
         result.setDescription("Single value input");
@@ -190,6 +199,16 @@ public class TestCasePatternAnalyzer {
                 strategy.setErrorHandling("Default to empty matrix with 0 dimensions");
                 break;
                 
+            case "three_float_values":
+                strategy.setParserType("three_float_parser");
+                strategy.setSteps(Arrays.asList(
+                    "Split input by delimiter: " + inputPattern.getDelimiter(),
+                    "Parse exactly 3 float values",
+                    "Return [float1, float2, float3]"
+                ));
+                strategy.setErrorHandling("Default to 0.0 for missing/invalid float values");
+                break;
+                
             case "multiple_values":
                 strategy.setParserType("multiple_values_parser");
                 strategy.setSteps(Arrays.asList(
@@ -255,6 +274,31 @@ public class TestCasePatternAnalyzer {
         return false;
     }
 
+    private boolean isThreeFloatValuesPattern(String input) {
+        String[] parts = input.trim().split("[,\\s]+");
+        if (parts.length != 3) {
+            return false;
+        }
+        
+        // Check if all three parts are numeric (can be float)
+        for (String part : parts) {
+            if (!isNumeric(part) && !isFloatNumeric(part)) {
+                return false;
+            }
+        }
+        
+        return true;
+    }
+    
+    private boolean isFloatNumeric(String str) {
+        try {
+            Float.parseFloat(str);
+            return true;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+    
     private boolean isMultipleValuesPattern(String input) {
         String[] parts = input.trim().split("[,\\s]+");
         return parts.length > 1 && parts.length <= 5 && 

@@ -44,8 +44,18 @@ public class QuestionCodeCheckService {
         Question question = questionRepository.findById(questionId)
                 .orElseThrow(() -> new RuntimeException("Question not found"));
         
-        User student = userRepository.findByUsername(studentId)
-                .orElseThrow(() -> new RuntimeException("Student not found"));
+        // Try to find user by username first, then by ID if it fails
+        User student = findUserByUsernameOrId(studentId);
+        
+        // Validate code and language compatibility
+        String languageMismatchError = validateCodeLanguageCompatibility(code, language);
+        if (languageMismatchError != null) {
+            CodeExecutionResponse errorResponse = new CodeExecutionResponse();
+            errorResponse.setSuccess(false);
+            errorResponse.setError(languageMismatchError);
+            errorResponse.setMessage("Vui lòng kiểm tra lại ngôn ngữ lập trình bạn đã chọn");
+            return errorResponse;
+        }
         
         CodeExecutionResponse result;
         
@@ -108,13 +118,34 @@ public class QuestionCodeCheckService {
      * Get current best score for a question
      */
     public Double getQuestionScore(Long questionId, String studentId) {
-        User student = userRepository.findByUsername(studentId)
-                .orElseThrow(() -> new RuntimeException("Student not found"));
+        User student = findUserByUsernameOrId(studentId);
         
         Optional<QuestionSubmission> submission = questionSubmissionRepository
                 .findByQuestionIdAndStudentId(questionId, student.getId());
         
         return submission.map(QuestionSubmission::getScore).orElse(0.0);
+    }
+    
+    /**
+     * Helper method to find user by username or ID
+     * This handles both cases where studentId could be username or ID
+     */
+    private User findUserByUsernameOrId(String studentId) {
+        // First try to find by username
+        Optional<User> userByUsername = userRepository.findByUsername(studentId);
+        if (userByUsername.isPresent()) {
+            return userByUsername.get();
+        }
+        
+        // If not found by username, try to parse as ID and find by ID
+        try {
+            Long userId = Long.parseLong(studentId);
+            return userRepository.findById(userId)
+                    .orElseThrow(() -> new RuntimeException("Student not found with ID: " + studentId));
+        } catch (NumberFormatException e) {
+            // If it's not a valid number, it was supposed to be a username but not found
+            throw new RuntimeException("Student not found with username: " + studentId);
+        }
     }
     
     /**
@@ -174,8 +205,7 @@ public class QuestionCodeCheckService {
      * Mark question submission as final
      */
     private void markQuestionSubmissionAsFinal(Long questionId, String studentId, CodeExecutionResponse result) {
-        User student = userRepository.findByUsername(studentId)
-                .orElseThrow(() -> new RuntimeException("Student not found"));
+        User student = findUserByUsernameOrId(studentId);
         
         Optional<QuestionSubmission> optionalSubmission = questionSubmissionRepository
                 .findByQuestionIdAndStudentId(questionId, student.getId());
@@ -214,5 +244,72 @@ public class QuestionCodeCheckService {
         }
         
         return totalScore;
+    }
+    
+    /**
+     * Validate if the submitted code matches the selected programming language
+     * Returns error message if mismatch is detected, null if compatible
+     */
+    private String validateCodeLanguageCompatibility(String code, String language) {
+        if (code == null || code.trim().isEmpty()) {
+            return "Code không được để trống";
+        }
+        
+        String trimmedCode = code.trim();
+        language = language.toUpperCase();
+        
+        // Python language patterns
+        if (language.equals("PYTHON") || language.equals("PYTHON3")) {
+            if (trimmedCode.contains("def ") || trimmedCode.contains("import ") || 
+                trimmedCode.contains("print(") || trimmedCode.contains("for ") && trimmedCode.contains(":")) {
+                return null; // Valid Python code
+            }
+            // Check for C/Java patterns in Python submission
+            if (trimmedCode.contains("int main(") || trimmedCode.contains("#include") ||
+                trimmedCode.contains("System.out.print") || trimmedCode.contains("public class")) {
+                return "Mã nguồn có vẻ không phải Python. Bạn có chắc đã chọn đúng ngôn ngữ?";
+            }
+        }
+        
+        // C language patterns
+        else if (language.equals("C")) {
+            if (trimmedCode.contains("#include") || trimmedCode.contains("int main(") ||
+                trimmedCode.contains("printf(") || trimmedCode.contains("scanf(")) {
+                return null; // Valid C code
+            }
+            // Check for Python/Java patterns in C submission
+            if (trimmedCode.contains("def ") || trimmedCode.contains("print(") ||
+                trimmedCode.contains("System.out.print") || trimmedCode.contains("public class")) {
+                return "Mã nguồn có vẻ không phải C. Bạn có chắc đã chọn đúng ngôn ngữ?";
+            }
+        }
+        
+        // Java language patterns
+        else if (language.equals("JAVA")) {
+            if (trimmedCode.contains("public class") || trimmedCode.contains("System.out.print") ||
+                trimmedCode.contains("public static void main")) {
+                return null; // Valid Java code
+            }
+            // Check for Python/C patterns in Java submission
+            if (trimmedCode.contains("def ") || trimmedCode.contains("print(") && !trimmedCode.contains("System.out.print") ||
+                trimmedCode.contains("#include") || trimmedCode.contains("int main(")) {
+                return "Mã nguồn có vẻ không phải Java. Bạn có chắc đã chọn đúng ngôn ngữ?";
+            }
+        }
+        
+        // JavaScript language patterns
+        else if (language.equals("JAVASCRIPT") || language.equals("JS")) {
+            if (trimmedCode.contains("console.log") || trimmedCode.contains("function ") ||
+                trimmedCode.contains("var ") || trimmedCode.contains("let ") || trimmedCode.contains("const ")) {
+                return null; // Valid JavaScript code
+            }
+            // Check for other language patterns in JavaScript submission
+            if (trimmedCode.contains("def ") || trimmedCode.contains("print(") && !trimmedCode.contains("console.log") ||
+                trimmedCode.contains("#include") || trimmedCode.contains("System.out.print")) {
+                return "Mã nguồn có vẻ không phải JavaScript. Bạn có chắc đã chọn đúng ngôn ngữ?";
+            }
+        }
+        
+        return null; // No obvious mismatch detected
     }
 }

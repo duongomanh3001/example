@@ -22,6 +22,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
@@ -214,6 +215,7 @@ public class TeacherController {
                 testCase.getId(),
                 testCase.getInput(),
                 testCase.getExpectedOutput(),
+                testCase.getTestCode(),
                 testCase.getIsHidden(),
                 testCase.getWeight(),
                 testCase.getTimeLimit(),
@@ -394,15 +396,64 @@ public class TeacherController {
         }
     }
     
-    @GetMapping("/system/supported-languages")
+        @GetMapping("/system/supported-languages")
     @PreAuthorize("hasRole('TEACHER')")
     public ResponseEntity<Set<ProgrammingLanguage>> getSupportedLanguages() {
-        try {
-            Set<ProgrammingLanguage> supportedLanguages = compilerService.getSupportedLanguages();
-            return ResponseEntity.ok(supportedLanguages);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().build();
+        Set<ProgrammingLanguage> supportedLanguages = new HashSet<>();
+        
+        for (ProgrammingLanguage lang : ProgrammingLanguage.values()) {
+            if (compilerService.isLanguageSupported(lang)) {
+                supportedLanguages.add(lang);
+            }
         }
+        
+        return ResponseEntity.ok(supportedLanguages);
+    }
+    
+    @PostMapping("/system/test-compilation")
+    @PreAuthorize("hasRole('TEACHER')")
+    public ResponseEntity<Map<String, Object>> testCompilation(
+            @RequestBody TestCompilationRequest request) {
+        
+        Map<String, Object> result = new HashMap<>();
+        
+        try {
+            // Simple test C code
+            String testCode = """
+                #include <stdio.h>
+                
+                int main() {
+                    printf("Hello, CScore!");
+                    return 0;
+                }
+                """;
+            
+            CodeExecutionResponse response = hybridCodeExecutionService.executeCode(testCode, "c");
+            
+            result.put("success", response.isSuccess());
+            result.put("output", response.getOutput());
+            result.put("error", response.getError());
+            result.put("compilationError", response.getCompilationError());
+            result.put("language", "c");
+            
+            return ResponseEntity.ok(result);
+            
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("error", "Test compilation failed: " + e.getMessage());
+            return ResponseEntity.ok(result);
+        }
+    }
+    
+    // DTO for test compilation request
+    public static class TestCompilationRequest {
+        private String language;
+        private String code;
+        
+        public String getLanguage() { return language; }
+        public void setLanguage(String language) { this.language = language; }
+        public String getCode() { return code; }
+        public void setCode(String code) { this.code = code; }
     }
     
     // ======================== CODE VALIDATION ========================

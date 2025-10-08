@@ -39,3 +39,35 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Backend specific
+cscore-backend/target/
+cscore-backend/.mvn/wrapper/maven-wrapper.properties
+*.class
+*.jar
+!cscore-backend/mvnw.jar
+*.war
+*.ear
+*.nar
+hs_err_pid*
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+temp_*
+test_*
+*.backup
+*.tmp
+
+# Logs
+logs/
+*.log
+
+# Database
+*.db
+*.sqlite

@@ -216,30 +216,54 @@ class AssignmentServiceClass {
 
   async runQuestionCode(assignmentId: number, questionId: number, code: string, language: string, input?: string): Promise<CodeExecutionResponse> {
     // Run code with custom input (for testing, no grading)
-    const result = await apiClient.post<CodeExecutionResponse>(`/api/student/check-question-code`, {
-      questionId,
-      code,
-      language,
-      input
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 second timeout
     
-    // Add context message for run mode
-    if (result && input) {
-      result.message = "Chạy code với input tùy chỉnh - Kết quả chỉ để tham khảo, không tính điểm.";
+    try {
+      const result = await apiClient.post<CodeExecutionResponse>(`/api/student/check-question-code`, {
+        questionId,
+        code,
+        language,
+        input
+      }, { signal: controller.signal });
+    
+      // Add context message for run mode
+      if (result && input) {
+        result.message = "Chạy code với input tùy chỉnh - Kết quả chỉ để tham khảo, không tính điểm.";
+      }
+      
+      return result;
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('Request timeout: Code execution took too long. Please check for infinite loops.');
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
     }
-    
-    return result;
   }
 
   async testQuestionCode(assignmentId: number, questionId: number, code: string, language: string): Promise<CodeExecutionResponse> {
     // Test code with teacher's test cases (with grading)
-    const result = await apiClient.post<CodeExecutionResponse>(`/api/student/check-question-code`, {
-      questionId,
-      code,
-      language
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout for testing
     
-    return result;
+    try {
+      const result = await apiClient.post<CodeExecutionResponse>(`/api/student/check-question-code`, {
+        questionId,
+        code,
+        language
+      }, { signal: controller.signal });
+      
+      return result;
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('Test timeout: Auto-grading took too long (>60s). This might indicate server overload or code performance issues.');
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   // Check question code with test cases (similar to Moodle CodeRunner)
@@ -286,11 +310,11 @@ class AssignmentServiceClass {
     
     switch (language.toLowerCase()) {
       case 'c':
-        combinedCode = `#include <stdio.h>\n#include <string.h>\n\n${answerCode}\n\nint main() {\n    ${testCode}\n    return 0;\n}`;
+        combinedCode = `#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n\n${answerCode}\n\nint main() {\n    ${testCode}\n    return 0;\n}`;
         break;
       case 'cpp':
       case 'c++':
-        combinedCode = `#include <iostream>\n#include <string>\n#include <cstring>\nusing namespace std;\n\n${answerCode}\n\nint main() {\n    ${testCode}\n    return 0;\n}`;
+        combinedCode = `#include <iostream>\n#include <string>\n#include <cstring>\n#include <cmath>\nusing namespace std;\n\n${answerCode}\n\nint main() {\n    ${testCode}\n    return 0;\n}`;
         break;
       case 'python':
         combinedCode = `${answerCode}\n\n${testCode}`;
@@ -338,7 +362,7 @@ class AssignmentServiceClass {
         break;
       default:
         // Default to C for backward compatibility
-        combinedCode = `#include <stdio.h>\n#include <string.h>\n\n${answerCode}\n\nint main() {\n    ${testCode}\n    return 0;\n}`;
+        combinedCode = `#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n\n${answerCode}\n\nint main() {\n    ${testCode}\n    return 0;\n}`;
     }
     
     console.log('Debug - Original answerCode:', answerCode);

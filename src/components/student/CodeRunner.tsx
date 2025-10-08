@@ -4,6 +4,7 @@ interface TestCase {
   id: number;
   input: string;
   expectedOutput: string;
+  testCode?: string;
   isHidden: boolean;
   weight: number;
 }

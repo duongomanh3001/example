@@ -79,6 +79,7 @@ public class WebSecurityConfig {
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/teacher/**").hasAnyRole("TEACHER", "ADMIN")
                         .requestMatchers("/api/student/**").hasAnyRole("STUDENT", "TEACHER", "ADMIN")
+                        .requestMatchers("/api/notifications/**").authenticated()  // Notification endpoints for all authenticated users
                         .anyRequest().authenticated()
                 );
 

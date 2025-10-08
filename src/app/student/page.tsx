@@ -8,7 +8,7 @@ import { useRoleAccess } from "@/hooks/useRoleAccess";
 import { CourseService } from "@/services/course.service";
 import { CourseResponse } from "@/types/api";
 import Link from "next/link";
-import MainLayout from "@/components/layouts/MainLayout";
+import StudentLayout from "@/components/layouts/StudentLayout";
 
 function StudentDashboard() {
   const [courses, setCourses] = useState<CourseResponse[]>([]);
@@ -68,16 +68,16 @@ function StudentDashboard() {
   }
 
   return (
-    <MainLayout>
-      <div className="mx-auto max-w-7xl px-4 py-6">
-      {/* Welcome Section */}
-      <div className="mb-6">
-        <h1 className="text-primary font-semibold text-xl">
-          Chào mừng, {getUserDisplayName()}
-        </h1>
-        <p className="text-primary-400 text-sm mt-1">
-          {getRoleName()} - Các khóa học đã đăng ký
-        </p>
+    <StudentLayout>
+      <div className="h-full">
+        {/* Welcome Section */}
+        <div className="mb-6">
+          <h1 className="text-primary font-semibold text-xl">
+            Chào mừng, {getUserDisplayName()}
+          </h1>
+          <p className="text-primary-400 text-sm mt-1">
+            {getRoleName()} - Các khóa học đã đăng ký
+          </p>
       </div>
 
       {/* Courses Section */}
@@ -108,9 +108,9 @@ function StudentDashboard() {
             ))}
           </div>
         )}
+        </div>
       </div>
-      </div>
-    </MainLayout>
+    </StudentLayout>
   );
 }
 

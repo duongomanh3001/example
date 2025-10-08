@@ -28,6 +28,9 @@ public class TestCase {
     @Column(name = "expected_output", columnDefinition = "TEXT")
     private String expectedOutput;
     
+    @Column(name = "test_code", columnDefinition = "TEXT")
+    private String testCode;
+    
     @Column(name = "is_hidden")
     private Boolean isHidden = false;
     

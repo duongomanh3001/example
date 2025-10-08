@@ -1,12 +1,15 @@
 package iuh.fit.cscore_be.controller;
 
+import iuh.fit.cscore_be.dto.request.MultiQuestionSubmissionRequest;
 import iuh.fit.cscore_be.dto.request.SubmissionRequest;
+import iuh.fit.cscore_be.dto.response.MultiQuestionSubmissionResponse;
 import iuh.fit.cscore_be.dto.response.StudentAssignmentResponse;
 import iuh.fit.cscore_be.dto.response.StudentDashboardResponse;
 import iuh.fit.cscore_be.dto.response.SubmissionResponse;
 import iuh.fit.cscore_be.entity.User;
 import iuh.fit.cscore_be.security.JwtUtils;
 import iuh.fit.cscore_be.security.UserPrincipal;
+import iuh.fit.cscore_be.service.MultiQuestionSubmissionService;
 import iuh.fit.cscore_be.service.StudentDashboardService;
 import iuh.fit.cscore_be.service.StudentService;
 import iuh.fit.cscore_be.service.UserService;
@@ -29,6 +32,7 @@ public class StudentController {
     private final StudentDashboardService studentDashboardService;
     private final UserService userService;
     private final JwtUtils jwtUtils;
+    private final MultiQuestionSubmissionService multiQuestionSubmissionService;
 
     @GetMapping("/health")
     @PreAuthorize("hasRole('STUDENT') or hasRole('TEACHER') or hasRole('ADMIN')")
@@ -101,6 +105,26 @@ public class StudentController {
         
         SubmissionResponse submission = studentService.getSubmissionDetails(submissionId, student.getId());
         return ResponseEntity.ok(submission);
+    }
+    
+    @PostMapping("/assignments/{assignmentId}/submit-multi-question")
+    @PreAuthorize("hasRole('STUDENT') or hasRole('TEACHER') or hasRole('ADMIN')")
+    public ResponseEntity<MultiQuestionSubmissionResponse> submitMultiQuestionAssignment(
+            @PathVariable Long assignmentId,
+            @Valid @RequestBody MultiQuestionSubmissionRequest request,
+            @RequestHeader("Authorization") String authHeader) {
+
+        String token = authHeader.substring(7);
+        String username = jwtUtils.getUserNameFromJwtToken(token);
+        User student = userService.findByUsername(username);
+        
+        // Set assignment ID from path
+        request.setAssignmentId(assignmentId);
+        
+        MultiQuestionSubmissionResponse response = multiQuestionSubmissionService
+                .submitMultiQuestionAssignment(assignmentId, student.getId(), request);
+        
+        return ResponseEntity.ok(response);
     }
 
     // TODO: Implement these methods gradually as needed

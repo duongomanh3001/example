@@ -134,14 +134,7 @@ public class HybridCodeExecutionService {
     // JOBE execution methods
     private CodeExecutionResponse executeWithJobe(String code, String language) {
         try {
-            // Preprocess C code to add necessary includes
-            String processedCode = code;
-            if ("c".equalsIgnoreCase(language)) {
-                processedCode = preprocessCCode(code);
-                log.debug("C code preprocessed for Jobe execution");
-            }
-            
-            return jobeExecutionService.executeCode(processedCode, language);
+            return jobeExecutionService.executeCode(code, language);
         } catch (Exception e) {
             log.warn("Jobe execution failed, falling back to local: {}", e.getMessage());
             return localCodeExecutionService.executeCode(code, language);
@@ -150,15 +143,22 @@ public class HybridCodeExecutionService {
 
     private CodeExecutionResponse executeWithInputJobe(String code, String language, String input) {
         try {
-            // Preprocess C code to add necessary includes
-            String processedCode = code;
-            if ("c".equalsIgnoreCase(language)) {
-                processedCode = preprocessCCode(code);
-                log.debug("C code preprocessed. Original length: {}, Processed length: {}", 
-                         code.length(), processedCode.length());
+            CodeExecutionResponse response = jobeExecutionService.executeCodeWithInput(code, language, input);
+            
+            // Check if execution failed due to math library issues
+            if (!response.isSuccess() && response.getError() != null && 
+                (response.getError().contains("undefined reference to `sqrt'") ||
+                 response.getError().contains("undefined reference to `pow'") ||
+                 response.getError().contains("undefined reference to `sin'") ||
+                 response.getError().contains("undefined reference to `cos'") ||
+                 response.getError().contains("undefined reference to `tan'") ||
+                 response.getError().contains("math.h"))) {
+                
+                log.warn("Jobe execution failed due to math library issues, falling back to local execution");
+                return localCodeExecutionService.executeCodeWithInput(code, language, input);
             }
             
-            return jobeExecutionService.executeCodeWithInput(processedCode, language, input);
+            return response;
         } catch (Exception e) {
             log.warn("Jobe execution with input failed, falling back to local: {}", e.getMessage());
             return localCodeExecutionService.executeCodeWithInput(code, language, input);
@@ -207,38 +207,23 @@ public class HybridCodeExecutionService {
     private CodeExecutionResponse executeWithHybrid(String code, String language) {
         if (jobeEnabled && jobeExecutionService.isJobeServerAvailable()) {
             try {
-                // Preprocess C code to add necessary includes
-                String processedCode = code;
-                if ("c".equalsIgnoreCase(language)) {
-                    processedCode = preprocessCCode(code);
-                    log.debug("C code preprocessed for hybrid Jobe execution");
-                }
-                
-                CodeExecutionResponse result = jobeExecutionService.executeCode(processedCode, language);
+                CodeExecutionResponse result = jobeExecutionService.executeCode(code, language);
                 if (result.isSuccess()) {
-                    log.debug("Hybrid execution: Jobe succeeded for language: {}", language);
                     return result;
                 }
+                log.warn("Jobe execution unsuccessful, falling back to local");
             } catch (Exception e) {
-                log.warn("Hybrid execution: Jobe failed for {}, falling back to local: {}", language, e.getMessage());
+                log.warn("Jobe execution failed, falling back to local: {}", e.getMessage());
             }
         }
         
-        log.debug("Hybrid execution: Using local execution for language: {}", language);
         return localCodeExecutionService.executeCode(code, language);
     }
 
     private CodeExecutionResponse executeWithInputHybrid(String code, String language, String input) {
         if (jobeEnabled && jobeExecutionService.isJobeServerAvailable()) {
             try {
-                // Preprocess C code to add necessary includes
-                String processedCode = code;
-                if ("c".equalsIgnoreCase(language)) {
-                    processedCode = preprocessCCode(code);
-                    log.debug("C code preprocessed for hybrid Jobe execution with input");
-                }
-                
-                CodeExecutionResponse result = jobeExecutionService.executeCodeWithInput(processedCode, language, input);
+                CodeExecutionResponse result = jobeExecutionService.executeCodeWithInput(code, language, input);
                 if (result.isSuccess()) {
                     return result;
                 }
@@ -288,57 +273,6 @@ public class HybridCodeExecutionService {
         }
         
         return info;
-    }
-
-    /**
-     * Preprocess C code to automatically add necessary includes
-     * This is particularly important for teacher code validation
-     */
-    private String preprocessCCode(String code) {
-        if (code != null && !code.trim().isEmpty()) {
-            // Check if code uses math functions
-            boolean needsMathLib = containsMathFunctions(code);
-            boolean hasStdioInclude = code.contains("#include <stdio.h>");
-            boolean hasMathInclude = code.contains("#include <math.h>");
-            
-            StringBuilder preprocessed = new StringBuilder();
-            
-            // Add standard includes at the beginning if not present
-            if (!hasStdioInclude) {
-                preprocessed.append("#include <stdio.h>\n");
-            }
-            
-            // Add math.h if needed and not present
-            if (needsMathLib && !hasMathInclude) {
-                preprocessed.append("#include <math.h>\n");
-            }
-            
-            // Add original code
-            preprocessed.append(code);
-            
-            return preprocessed.toString();
-        }
-        
-        return code;
-    }
-    
-    /**
-     * Check if C code contains math functions that require math.h
-     */
-    private boolean containsMathFunctions(String code) {
-        String[] mathFunctions = {
-            "sqrt", "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
-            "exp", "log", "log10", "pow", "ceil", "floor", "fabs", "abs",
-            "sinh", "cosh", "tanh", "fmod", "ldexp", "frexp", "modf"
-        };
-        
-        for (String func : mathFunctions) {
-            if (code.matches(".*\\b" + func + "\\s*\\(.*")) {
-                return true;
-            }
-        }
-        
-        return false;
     }
 
     // Enums and DTOs

@@ -11,10 +11,12 @@ interface MainLayoutProps {
 
 export default function MainLayout({ children, className = "" }: MainLayoutProps) {
   return (
-    <div className={`min-h-screen bg-white flex flex-col ${className}`}>
+    <div className={`h-screen flex flex-col ${className}`} style={{ backgroundColor: 'rgb(187, 187, 187)' }}>
       <Navbar />
-      <main className="flex-1">
-        {children}
+      <main className="flex-1 bg-white flex flex-col">
+        <div className="flex-1 p-6 overflow-auto">
+          {children}
+        </div>
       </main>
       <Footer />
     </div>

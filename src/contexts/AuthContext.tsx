@@ -19,13 +19,14 @@ type AuthAction =
   | { type: 'SIGN_IN_SUCCESS'; payload: { user: User; token: string } }
   | { type: 'SIGN_IN_ERROR'; payload: string }
   | { type: 'SIGN_OUT' }
-  | { type: 'LOAD_USER'; payload: { user: User; token: string } };
+  | { type: 'LOAD_USER'; payload: { user: User; token: string } }
+  | { type: 'INITIALIZE_COMPLETE' };
 
 const initialState: AuthState = {
   isAuthenticated: false,
   user: null,
   token: null,
-  loading: false,
+  loading: true, // Bắt đầu với loading: true để tránh redirect khi F5
   error: null,
 };
 
@@ -58,6 +59,7 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
     case 'SIGN_OUT':
       return {
         ...initialState,
+        loading: false, // Đặt loading: false khi đăng xuất để hiển thị trang chủ
       };
     case 'LOAD_USER':
       return {
@@ -65,6 +67,11 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
         isAuthenticated: true,
         user: action.payload.user,
         token: action.payload.token,
+        loading: false,
+      };
+    case 'INITIALIZE_COMPLETE':
+      return {
+        ...state,
         loading: false,
       };
     default:
@@ -85,6 +92,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         type: 'LOAD_USER',
         payload: { user, token },
       });
+    } else {
+      // Nếu không có token/user, chỉ set loading = false
+      dispatch({ type: 'INITIALIZE_COMPLETE' });
     }
   }, []);
 

@@ -18,6 +18,9 @@ public class CreateTestCaseRequest {
     @Size(max = 5000, message = "Expected output không được vượt quá 5000 ký tự")
     private String expectedOutput;
     
+    @Size(max = 10000, message = "Test code không được vượt quá 10000 ký tự")
+    private String testCode;
+    
     private Boolean isHidden = false;
     
     private Double weight = 1.0;

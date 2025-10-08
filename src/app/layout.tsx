@@ -3,6 +3,7 @@ import { Open_Sans, Noto_Sans } from "next/font/google";
 import "./globals.css";
 import ClientOnlyWrapper from "@/components/common/ClientOnlyWrapper";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { NotificationProvider } from "@/contexts/NotificationContext";
 
 const openSans = Open_Sans({
   variable: "--font-open-sans",
@@ -17,8 +18,11 @@ const notoSansArabic = Noto_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "CScore - Hệ thống chấm điểm tự động",
-  description: "Hệ thống chấm điểm tự động CScore - Đổi mới tư duy, làm giàu thêm tri thức",
+  title: "CScore",
+  description: "Hệ thống chấm điểm tự động CScore",
+  icons: {
+    icon: "/cscore-logo.ico",
+  },
 };
 
 export default function RootLayout({
@@ -30,10 +34,13 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body
         className={`${openSans.variable} ${notoSansArabic.variable} antialiased`}
+        suppressHydrationWarning
       >
         <AuthProvider>
-          <ClientOnlyWrapper />
-          {children}
+          <NotificationProvider>
+            <ClientOnlyWrapper />
+            {children}
+          </NotificationProvider>
         </AuthProvider>
       </body>
     </html>

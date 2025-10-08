@@ -1,11 +1,11 @@
-export default function Footer() {
+export default function Footer({ className = '' }: { className?: string }) {
   return (
-    <footer className="bg-primary text-white mt-20">
+    <footer className={`bg-primary text-white ${className}`}>
       <div className="mx-auto max-w-7xl px-4 py-12 grid gap-8 md:grid-cols-2">
         <div>
           <div className="flex items-center gap-2 semibold text-lg">
             <img src="/cscore.png" alt="CSCORE" className="h-6 w-6" />
-            <span className="text-white">CSCORE - Raumania Score System</span>
+            <span className="text-white">CS:CORE</span>
           </div>
         </div>
         <div className="grid sm:grid-cols-2 gap-6">
@@ -22,8 +22,8 @@ export default function Footer() {
             <h4 className="text-white font-semibold mb-3">Liên hệ</h4>
             <div className="text-sm space-y-2 text-white">
               <p><span className="font-semibold">Trung tâm Quản trị</span>COUNTER-SCORE 36</p>
-              <p>Phone: 098 989 999 - ext 420</p>
-              <p>E-mail: cs36@raumania.edu.vn</p>
+              <p>Phone: 036 36 36 - ext 420</p>
+              <p>E-mail: CSCore@raumania.edu.vn</p>
             </div>
           </div>
         </div>

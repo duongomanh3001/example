@@ -187,6 +187,22 @@ public class CompilerService {
         for (String cmd : candidates) {
             try {
                 ProcessBuilder pb = new ProcessBuilder(cmd, "--version");
+                
+                // Set environment for Windows MSYS2
+                if (os.contains("win")) {
+                    java.util.Map<String, String> env = pb.environment();
+                    String currentPath = env.get("PATH");
+                    if (currentPath == null) currentPath = "";
+                    
+                    String msys2Paths = "C:\\msys64\\ucrt64\\bin;C:\\msys64\\mingw64\\bin;C:\\msys64\\usr\\bin";
+                    if (!currentPath.isEmpty()) {
+                        env.put("PATH", msys2Paths + ";" + currentPath);
+                    } else {
+                        env.put("PATH", msys2Paths);
+                    }
+                    env.put("MSYSTEM", "UCRT64");
+                }
+                
                 Process process = pb.start();
                 
                 boolean finished = process.waitFor(10, TimeUnit.SECONDS);

@@ -4,6 +4,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import Hero from '@/components/ui/Hero';
+import Features from '@/components/ui/Features';
+
 import Navbar from '@/components/common/Navbar';
 import Footer from '@/components/common/Footer';
 
@@ -12,7 +14,8 @@ export default function Home() {
   const router = useRouter();
 
   useEffect(() => {
-    if (!state.loading && state.user) {
+    // Chỉ redirect khi đã hoàn thành việc kiểm tra authentication
+    if (!state.loading && state.isAuthenticated && state.user) {
       // Redirect authenticated users to their respective dashboards
       switch (state.user.role) {
         case 'ADMIN':
@@ -26,7 +29,7 @@ export default function Home() {
           break;
       }
     }
-  }, [state.user, state.loading, router]);
+  }, [state.isAuthenticated, state.user, state.loading, router]);
 
   if (state.loading) {
     return (
@@ -38,10 +41,13 @@ export default function Home() {
 
   // Show landing page for unauthenticated users
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white flex flex-col">
       <Navbar />
-      <Hero />
-      <Footer />
+      <main>
+        <Hero />
+        <Features />
+      </main>
+      <Footer className="mt-auto" />
     </div>
   );
 }

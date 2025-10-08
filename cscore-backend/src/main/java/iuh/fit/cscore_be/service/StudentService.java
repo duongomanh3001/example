@@ -1,6 +1,9 @@
 package iuh.fit.cscore_be.service;
 
+import iuh.fit.cscore_be.dto.request.MultiQuestionSubmissionRequest;
+import iuh.fit.cscore_be.dto.request.QuestionSubmissionItem;
 import iuh.fit.cscore_be.dto.request.SubmissionRequest;
+import iuh.fit.cscore_be.dto.response.MultiQuestionSubmissionResponse;
 import iuh.fit.cscore_be.dto.response.SubmissionResponse;
 import iuh.fit.cscore_be.entity.*;
 import iuh.fit.cscore_be.enums.SubmissionStatus;
@@ -27,8 +30,9 @@ public class StudentService {
     private final AutoGradingService autoGradingService;
     private final EnhancedAutoGradingService enhancedAutoGradingService;
     private final UserRepository userRepository;
+    private final MultiQuestionSubmissionService multiQuestionSubmissionService;
     
-    // Basic submit assignment method
+    // Enhanced submit assignment method with multi-question support
     @Transactional
     public SubmissionResponse submitAssignment(Long assignmentId, Long studentId, SubmissionRequest request) {
         log.info("Processing assignment submission for assignmentId: {}, studentId: {}", 
@@ -43,6 +47,44 @@ public class StudentService {
             User student = userRepository.findById(studentId)
                     .orElseThrow(() -> new RuntimeException("Student not found: " + studentId));
 
+            // Check if this is a multi-question assignment
+            if (assignment.getQuestions() != null && assignment.getQuestions().size() > 1) {
+                log.info("Detected multi-question assignment with {} questions", assignment.getQuestions().size());
+                return handleMultiQuestionSubmission(assignmentId, studentId, request, assignment);
+            }
+
+            // Handle single question or legacy assignment
+            return handleLegacySubmission(assignmentId, studentId, request, assignment, student);
+        } catch (Exception e) {
+            log.error("Unexpected error in submitAssignment for assignmentId: {}, studentId: {}, error: {}", 
+                    assignmentId, studentId, e.getMessage(), e);
+            
+            // Return a user-friendly error message
+            throw new RuntimeException("Không thể xử lý bài nộp. Vui lòng kiểm tra lại thông tin và thử lại sau. Chi tiết: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Handle multi-question assignment submission
+     */
+    private SubmissionResponse handleMultiQuestionSubmission(Long assignmentId, Long studentId, 
+                                                           SubmissionRequest request, Assignment assignment) {
+        // Convert legacy request to multi-question format
+        MultiQuestionSubmissionRequest multiRequest = convertToMultiQuestionRequest(request, assignment);
+        
+        // Use multi-question submission service
+        MultiQuestionSubmissionResponse multiResponse = multiQuestionSubmissionService
+                .submitMultiQuestionAssignment(assignmentId, studentId, multiRequest);
+        
+        // Convert back to legacy response for API compatibility
+        return multiQuestionSubmissionService.convertToLegacyResponse(multiResponse);
+    }
+    
+    /**
+     * Handle legacy single-question submission
+     */
+    private SubmissionResponse handleLegacySubmission(Long assignmentId, Long studentId, 
+                                                    SubmissionRequest request, Assignment assignment, User student) {
         // Check if assignment is active
         if (!assignment.getIsActive()) {
             throw new RuntimeException("Assignment is not active");
@@ -142,13 +184,6 @@ public class StudentService {
                     null, // test cases passed
                     null  // total test cases
             );
-        } catch (Exception e) {
-            log.error("Unexpected error in submitAssignment for assignmentId: {}, studentId: {}, error: {}", 
-                    assignmentId, studentId, e.getMessage(), e);
-            
-            // Return a user-friendly error message
-            throw new RuntimeException("Không thể xử lý bài nộp. Vui lòng kiểm tra lại thông tin và thử lại sau. Chi tiết: " + e.getMessage());
-        }
     }
     
     /**
@@ -224,6 +259,53 @@ public class StudentService {
         }
         
         return questions;
+    }
+    
+    /**
+     * Convert legacy SubmissionRequest to MultiQuestionSubmissionRequest
+     */
+    private MultiQuestionSubmissionRequest convertToMultiQuestionRequest(SubmissionRequest request, Assignment assignment) {
+        List<QuestionSubmissionItem> questionItems = new ArrayList<>();
+        
+        // Check if code contains multi-question format
+        if (isMultiQuestionCode(request.getCode())) {
+            // Split the code by questions
+            List<String> questionCodes = splitMultiQuestionCode(request.getCode());
+            List<Question> questions = assignment.getQuestions();
+            
+            for (int i = 0; i < Math.min(questionCodes.size(), questions.size()); i++) {
+                Question question = questions.get(i);
+                String code = questionCodes.get(i).trim();
+                
+                if (!code.isEmpty()) {
+                    QuestionSubmissionItem item = new QuestionSubmissionItem();
+                    item.setQuestionId(question.getId());
+                    item.setAnswer(code);
+                    item.setLanguage(request.getProgrammingLanguage());
+                    item.setQuestionType(question.getQuestionType().toString());
+                    questionItems.add(item);
+                }
+            }
+        } else {
+            // Single question - map to first question in assignment
+            if (!assignment.getQuestions().isEmpty()) {
+                Question firstQuestion = assignment.getQuestions().get(0);
+                QuestionSubmissionItem item = new QuestionSubmissionItem();
+                item.setQuestionId(firstQuestion.getId());
+                item.setAnswer(request.getCode());
+                item.setLanguage(request.getProgrammingLanguage());
+                item.setQuestionType(firstQuestion.getQuestionType().toString());
+                questionItems.add(item);
+            }
+        }
+        
+        MultiQuestionSubmissionRequest multiRequest = new MultiQuestionSubmissionRequest();
+        multiRequest.setAssignmentId(request.getAssignmentId());
+        multiRequest.setQuestions(questionItems);
+        multiRequest.setPrimaryLanguage(request.getProgrammingLanguage());
+        multiRequest.setCombinedCode(request.getCode());
+        
+        return multiRequest;
     }
     
     @Transactional(readOnly = true)

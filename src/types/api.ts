@@ -97,6 +97,12 @@ export interface CreateQuestionRequest {
   orderIndex: number;
   testCases?: TestCaseRequest[];
   options?: QuestionOptionRequest[];
+  // Enhanced grading fields
+  referenceImplementation?: string;
+  functionName?: string;
+  functionSignature?: string;
+  programmingLanguage?: string;
+  testTemplate?: string;
 }
 
 export interface UpdateAssignmentRequest {
@@ -135,6 +141,7 @@ export interface QuestionOptionRequest {
 export interface TestCaseRequest {
   input: string;
   expectedOutput: string;
+  testCode: string;
   isHidden: boolean;
   points: number;
 }
@@ -193,6 +200,7 @@ export interface TestCaseResponse {
   id: number;
   input: string;
   expectedOutput: string;
+  testCode: string;
   isHidden: boolean;
   points: number;
 }

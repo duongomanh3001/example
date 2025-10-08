@@ -64,6 +64,7 @@ public class QuestionService {
         TestCase testCase = new TestCase();
         testCase.setInput(request.getInput());
         testCase.setExpectedOutput(request.getExpectedOutput());
+        testCase.setTestCode(request.getTestCode());
         testCase.setIsHidden(request.getIsHidden());
         testCase.setWeight(request.getWeight());
         testCase.setTimeLimit(request.getTimeLimit());

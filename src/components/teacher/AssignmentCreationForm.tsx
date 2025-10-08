@@ -105,7 +105,8 @@ export default function AssignmentCreationForm({ isOpen, onClose, onSuccess }: A
       input: '',
       expectedOutput: '',
       isHidden: false,
-      points: 1
+      points: 1,
+      testCode: ''
     };
     
     const updatedQuestions = [...questions];

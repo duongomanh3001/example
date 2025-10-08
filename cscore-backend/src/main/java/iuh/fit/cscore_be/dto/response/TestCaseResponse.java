@@ -11,6 +11,7 @@ public class TestCaseResponse {
     private Long id;
     private String input;
     private String expectedOutput;
+    private String testCode;
     private Boolean isHidden;
     private Double weight;
     private Integer timeLimit;

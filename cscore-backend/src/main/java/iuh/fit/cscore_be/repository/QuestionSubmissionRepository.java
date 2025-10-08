@@ -3,6 +3,7 @@ package iuh.fit.cscore_be.repository;
 import iuh.fit.cscore_be.entity.QuestionSubmission;
 import iuh.fit.cscore_be.entity.Submission;
 import iuh.fit.cscore_be.entity.Question;
+import iuh.fit.cscore_be.entity.User;
 import iuh.fit.cscore_be.enums.SubmissionStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -20,6 +21,8 @@ public interface QuestionSubmissionRepository extends JpaRepository<QuestionSubm
     List<QuestionSubmission> findBySubmissionIdOrderByQuestionOrderIndexAsc(Long submissionId);
     
     Optional<QuestionSubmission> findBySubmissionAndQuestion(Submission submission, Question question);
+    
+    Optional<QuestionSubmission> findByQuestionAndStudent(Question question, User student);
     
     Optional<QuestionSubmission> findByQuestionIdAndStudentId(Long questionId, Long studentId);
     

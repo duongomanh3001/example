@@ -18,6 +18,8 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
 
 /**
  * Enhanced Automatic Grading Service
@@ -332,9 +334,32 @@ public class EnhancedAutoGradingService {
         
         program.append(functionCode).append("\n\n");
         
-        // Parse input and call function
-        String functionCall = generateFunctionCall(testCase, question);
-        program.append(functionCall).append("\n");
+        // Parse input and create proper function call for Python
+        String input = testCase.getInput();
+        String functionName = question.getFunctionName();
+        
+        // Handle null function name
+        if (functionName == null || functionName.trim().isEmpty()) {
+            functionName = extractFunctionNameFromQuestion(question);
+        }
+        
+        // For array-based functions, parse input as array
+        if (isArrayFunction(question)) {
+            // Parse "5, 2, 8, 1, 3, 10, 7" -> [5, 2, 8, 1, 3, 10, 7]
+            String[] parts = input.split(",");
+            StringBuilder arrayStr = new StringBuilder("[");
+            for (int i = 0; i < parts.length; i++) {
+                if (i > 0) arrayStr.append(", ");
+                arrayStr.append(parts[i].trim());
+            }
+            arrayStr.append("]");
+            
+            program.append(functionName).append("(").append(arrayStr).append(", ").append(parts.length).append(")\n");
+        } else {
+            // Use generic function call generation
+            String functionCall = generateFunctionCall(testCase, question);
+            program.append(functionCall).append("\n");
+        }
         
         return program.toString();
     }
@@ -401,6 +426,12 @@ public class EnhancedAutoGradingService {
         String functionName = question.getFunctionName();
         String input = testCase.getInput();
         String language = question.getProgrammingLanguage();
+        
+        // Handle null function name by trying to extract from code or using default
+        if (functionName == null || functionName.trim().isEmpty()) {
+            log.warn("Function name is null for question {}, attempting to extract or use default", question.getId());
+            functionName = extractFunctionNameFromQuestion(question);
+        }
         
         // Parse input parameters intelligently
         String[] params = parseInputParameters(input, question.getFunctionSignature());
@@ -571,8 +602,83 @@ public class EnhancedAutoGradingService {
     }
 
     /**
-     * Helper class for parsed input parameters
+     * Extract function name from question when it's null
+     * Try to extract from reference implementation or use default
      */
+    private String extractFunctionNameFromQuestion(Question question) {
+        // Try to extract from reference implementation
+        if (question.getReferenceImplementation() != null) {
+            String refImpl = question.getReferenceImplementation();
+            String functionName = extractFunctionByName(refImpl, null, question.getProgrammingLanguage());
+            if (functionName != null && !functionName.trim().isEmpty()) {
+                log.info("Extracted function name from reference implementation: {}", functionName);
+                return functionName.trim();
+            }
+        }
+        
+        // Try to extract from function signature
+        if (question.getFunctionSignature() != null) {
+            Pattern pattern = Pattern.compile("\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(");
+            Matcher matcher = pattern.matcher(question.getFunctionSignature());
+            if (matcher.find()) {
+                String functionName = matcher.group(1);
+                log.info("Extracted function name from signature: {}", functionName);
+                return functionName;
+            }
+        }
+        
+        // Default function names by language
+        String language = question.getProgrammingLanguage();
+        if ("python".equalsIgnoreCase(language)) {
+            return "process_input";
+        } else if ("java".equalsIgnoreCase(language)) {
+            return "processInput";
+        } else {
+            return "processInput";
+        }
+    }
+
+    /**
+     * Check if this is an array-based function (takes array + size parameters)
+     */
+    private boolean isArrayFunction(Question question) {
+        // Check function signature for array patterns
+        String signature = question.getFunctionSignature();
+        if (signature != null) {
+            String normalized = signature.toLowerCase();
+            if (normalized.contains("arr") && normalized.contains("n")) {
+                return true;
+            }
+            if (normalized.contains("array") && normalized.contains("size")) {
+                return true;
+            }
+        }
+        
+        // Check function name for common patterns
+        String functionName = question.getFunctionName();
+        if (functionName != null) {
+            String normalized = functionName.toLowerCase();
+            // Common Vietnamese array function names
+            if (normalized.contains("insole") || normalized.contains("inso")) {
+                return true;
+            }
+            if (normalized.contains("array") || normalized.contains("mang")) {
+                return true;
+            }
+        }
+        
+        // Check by description or content
+        String description = question.getDescription();
+        if (description != null) {
+            String normalized = description.toLowerCase();
+            if (normalized.contains("mảng") || normalized.contains("array")) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
     private static class ParsedInputParams {
         String stringValue = "";
         char charValue = ' ';
@@ -584,6 +690,11 @@ public class EnhancedAutoGradingService {
     private String extractStudentFunction(String submissionCode, Question question) {
         // For multi-question submissions, try to extract the specific function
         String functionName = question.getFunctionName();
+        
+        // Handle null function name
+        if (functionName == null || functionName.trim().isEmpty()) {
+            functionName = extractFunctionNameFromQuestion(question);
+        }
         
         if (functionName != null && !functionName.trim().isEmpty()) {
             return extractFunctionByName(submissionCode, functionName, question.getProgrammingLanguage());
@@ -623,6 +734,26 @@ public class EnhancedAutoGradingService {
     }
 
     private String extractPythonFunction(String code, String functionName) {
+        // If functionName is null, try to find the first function definition
+        if (functionName == null) {
+            String[] lines = code.split("\n");
+            for (String line : lines) {
+                String trimmed = line.trim();
+                if (trimmed.startsWith("def ") && trimmed.contains("(")) {
+                    // Extract function name
+                    int start = trimmed.indexOf("def ") + 4;
+                    int end = trimmed.indexOf("(");
+                    if (start < end) {
+                        String extractedName = trimmed.substring(start, end).trim();
+                        log.info("Auto-detected Python function name: {}", extractedName);
+                        return extractPythonFunction(code, extractedName);
+                    }
+                }
+            }
+            // No function found, return whole code
+            return code;
+        }
+        
         // Simple approach: find def functionName and extract until next def or end
         String[] lines = code.split("\n");
         StringBuilder function = new StringBuilder();

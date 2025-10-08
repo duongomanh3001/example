@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
 import { useAuth } from "@/contexts/AuthContext";
+import { NotificationBell } from "@/components/common/NotificationBell";
 import { Role } from "@/types/auth";
 
 export default function Navbar() {
@@ -67,6 +68,9 @@ export default function Navbar() {
               <Link href="/student" className={`hover:text-primary-600 ${pathname.startsWith("/student") ? "text-primary-600 font-medium" : ""}`}>
                 Khóa học
               </Link>
+              
+              {/* Notification Bell */}
+              <NotificationBell />
               
               {/* User Menu */}
               <div className="relative group">

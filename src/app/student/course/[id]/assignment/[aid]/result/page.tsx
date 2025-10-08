@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { use } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 import { AssignmentService } from "@/services/assignment.service";
 import { CourseService } from "@/services/course.service";
 import { StudentAssignmentResponse, CourseResponse, SubmissionResponse, QuestionResultResponse } from "@/types/api";
@@ -19,8 +20,9 @@ function formatDate(iso?: string) {
   return `${weekday}, ${date}, ${time}`;
 }
 
-export default function ResultPage({ params }: Props) {
+function ResultPage({ params }: Props) {
   const resolvedParams = use(params);
+  const { state } = useAuth();
   const [course, setCourse] = useState<CourseResponse | null>(null);
   const [assignment, setAssignment] = useState<StudentAssignmentResponse | null>(null);
   const [submissions, setSubmissions] = useState<SubmissionResponse[]>([]);
@@ -92,37 +94,55 @@ export default function ResultPage({ params }: Props) {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-7xl px-4 py-6">
-        <div className="animate-pulse">
-          <div className="h-6 bg-slate-200 rounded w-64 mb-4"></div>
-          <div className="h-64 bg-slate-200 rounded-lg"></div>
+      <MainLayout>
+        <div className="mx-auto max-w-7xl px-4 py-6">
+          <div className="animate-pulse">
+            <div className="h-6 bg-slate-200 rounded w-64 mb-4"></div>
+            <div className="h-64 bg-slate-200 rounded-lg"></div>
+          </div>
         </div>
-      </div>
+      </MainLayout>
     );
   }
 
   if (error || !course || !assignment) {
     return (
-      <div className="mx-auto max-w-7xl px-4 py-10">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
-          <p className="text-red-600">{error || 'Không tìm thấy kết quả bài tập'}</p>
+      <MainLayout>
+        <div className="mx-auto max-w-7xl px-4 py-10">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+            <p className="text-red-600">{error || 'Không tìm thấy kết quả bài tập'}</p>
+          </div>
+          <Link href={`/student/course/${resolvedParams.id}`} className="text-primary hover:underline">← Quay lại khóa học</Link>
         </div>
-        <Link href={`/student/course/${resolvedParams.id}`} className="text-blue-600 hover:underline">← Quay lại khóa học</Link>
-      </div>
+      </MainLayout>
     );
   }
 
   const latestSubmission = submissions.length > 0 ? submissions[submissions.length - 1] : null;
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6">
-      <div className="rounded-md border bg-white">
-        <div className="p-4 border-b">
-          <div className="text-sm text-rose-600 font-medium flex items-center gap-2">
-            <span className="inline-flex h-6 w-6 items-center justify-center rounded bg-rose-600 text-white">📄</span>
-            Bài tập
+    <MainLayout>
+      <div className="mx-auto max-w-7xl px-4 py-6">
+        {/* Header Breadcrumb */}
+        <div className="text-xs text-primary-400 flex items-center gap-2 mb-4">
+          <Link href="/student" className="hover:underline hover:text-primary">Trang chủ</Link>
+          <span>/</span>
+          <Link href={`/student/course/${course.id}`} className="hover:underline hover:text-primary">{course.name}</Link>
+          <span>/</span>
+          <Link href={`/student/course/${course.id}/assignment/${assignment.id}`} className="hover:underline hover:text-primary">{assignment.title}</Link>
+          <span>/</span>
+          <span className="text-primary">Kết quả</span>
+        </div>
+
+        <section className="rounded-md border bg-white">
+        <div className="border-b bg-primary-50 text-primary rounded-t-md flex items-center justify-between p-3 text-sm">
+          <div className="text-sm text-primary font-medium flex items-center gap-2">
+            <span className="inline-flex h-6 w-6 items-center justify-center rounded bg-primary text-white">📄</span>
+            Kết quả bài tập
           </div>
-          <h1 className="text-lg font-semibold mt-2">{assignment.title}</h1>
+        </div>
+        <div className="p-4">
+          <h1 className="text-lg font-semibold mb-2">{assignment.title}</h1>
           <div className="mt-2 text-sm space-y-1 text-slate-700">
             <div><span className="font-semibold">Khóa học:</span> {assignment.courseName}</div>
             <div><span className="font-semibold">Loại:</span> {
@@ -140,8 +160,7 @@ export default function ResultPage({ params }: Props) {
           </div>
         </div>
 
-        <div className="p-4">
-          <h2 className="text-rose-600 font-semibold mb-4">Kết quả bài nộp</h2>
+          <h2 className="text-primary font-semibold mb-4">Kết quả bài nộp</h2>
           
           {submissions.length === 0 ? (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
@@ -366,7 +385,7 @@ export default function ResultPage({ params }: Props) {
           <div className="mt-6 flex gap-3">
             <Link 
               href={`/student/course/${course.id}/assignment/${assignment.id}/attempt`}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+              className="px-4 py-2 bg-primary text-white rounded hover:bg-primary-600 transition-colors"
             >
               Làm lại
             </Link>
@@ -377,8 +396,10 @@ export default function ResultPage({ params }: Props) {
               Quay lại khóa học
             </Link>
           </div>
-        </div>
+        </section>
       </div>
-    </div>
+    </MainLayout>
   );
 }
+
+export default ResultPage;

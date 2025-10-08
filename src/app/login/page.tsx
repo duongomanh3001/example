@@ -17,10 +17,10 @@ export default function LoginPage() {
 
   // Redirect if already authenticated
   useEffect(() => {
-    if (isAuthenticated) {
+    if (!state.loading && isAuthenticated) {
       router.push(getDefaultRedirectPath());
     }
-  }, [isAuthenticated, router, getDefaultRedirectPath]);
+  }, [state.loading, isAuthenticated, router, getDefaultRedirectPath]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();

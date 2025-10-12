@@ -39,15 +39,13 @@ import java.util.List;
 @Slf4j
 public class TeacherController {
     
-    private final TeacherDashboardService dashboardService;
+    private final DashboardService dashboardService;
     private final CourseService courseService;
-    private final TeacherAssignmentManagementService assignmentManagementService;
+    private final AssignmentManagementService assignmentManagementService;
     private final SubmissionService submissionService;
     private final UserService userService;
     private final AutoGradingService autoGradingService;
-    private final EnhancedAutoGradingService enhancedAutoGradingService;
-    private final CompilerService compilerService;
-    private final HybridCodeExecutionService hybridCodeExecutionService;
+    private final CodeExecutionService codeExecutionService;
     
     // ======================== DASHBOARD ========================
     
@@ -55,7 +53,7 @@ public class TeacherController {
     @PreAuthorize("hasRole('TEACHER')")
     public ResponseEntity<TeacherDashboardResponse> getDashboard(@AuthenticationPrincipal UserPrincipal userPrincipal) {
         User teacher = userService.findById(userPrincipal.getId());
-        TeacherDashboardResponse dashboard = dashboardService.getDashboardData(teacher);
+        TeacherDashboardResponse dashboard = dashboardService.getTeacherDashboardData(teacher);
         return ResponseEntity.ok(dashboard);
     }
     
@@ -145,7 +143,7 @@ public class TeacherController {
             @PathVariable Long courseId,
             @AuthenticationPrincipal UserPrincipal userPrincipal) {
         User teacher = userService.findById(userPrincipal.getId());
-        List<AssignmentResponse> assignments = assignmentManagementService.getAssignmentsByCourse(courseId, teacher);
+        List<AssignmentResponse> assignments = assignmentManagementService.getAssignmentsByCourse(courseId);
         return ResponseEntity.ok(assignments);
     }
     
@@ -165,7 +163,7 @@ public class TeacherController {
             @Valid @RequestBody CreateAssignmentRequest request,
             @AuthenticationPrincipal UserPrincipal userPrincipal) {
         User teacher = userService.findById(userPrincipal.getId());
-        DetailedAssignmentResponse assignment = assignmentManagementService.createAssignment(request, teacher);
+        DetailedAssignmentResponse assignment = assignmentManagementService.createAssignmentWithQuestions(request, teacher);
         return ResponseEntity.status(HttpStatus.CREATED).body(assignment);
     }
     
@@ -357,13 +355,13 @@ public class TeacherController {
     
     @GetMapping("/assignments/{assignmentId}/grading-stats")
     @PreAuthorize("hasRole('TEACHER')")
-    public ResponseEntity<AutoGradingService.GradingStats> getGradingStats(
+    public ResponseEntity<Map<String, Object>> getGradingStats(
             @PathVariable Long assignmentId,
             @AuthenticationPrincipal UserPrincipal userPrincipal) {
         User teacher = userService.findById(userPrincipal.getId());
         
         try {
-            AutoGradingService.GradingStats stats = autoGradingService.getGradingStats(assignmentId);
+            Map<String, Object> stats = autoGradingService.getGradingStats(assignmentId);
             return ResponseEntity.ok(stats);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
@@ -389,7 +387,7 @@ public class TeacherController {
     @PreAuthorize("hasRole('TEACHER')")
     public ResponseEntity<Map<String, Object>> getCompilerStatus() {
         try {
-            Map<String, Object> systemRequirements = compilerService.getSystemRequirements();
+            Map<String, Object> systemRequirements = codeExecutionService.getSystemRequirements();
             return ResponseEntity.ok(systemRequirements);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
@@ -402,7 +400,7 @@ public class TeacherController {
         Set<ProgrammingLanguage> supportedLanguages = new HashSet<>();
         
         for (ProgrammingLanguage lang : ProgrammingLanguage.values()) {
-            if (compilerService.isLanguageSupported(lang)) {
+            if (codeExecutionService.isLanguageSupported(lang)) {
                 supportedLanguages.add(lang);
             }
         }
@@ -428,7 +426,7 @@ public class TeacherController {
                 }
                 """;
             
-            CodeExecutionResponse response = hybridCodeExecutionService.executeCode(testCode, "c");
+            CodeExecutionResponse response = codeExecutionService.executeCode(testCode, "c");
             
             result.put("success", response.isSuccess());
             result.put("output", response.getOutput());
@@ -475,7 +473,7 @@ public class TeacherController {
             
             // Use the hybrid code execution service to execute the code
             long startTime = System.currentTimeMillis();
-            var result = hybridCodeExecutionService.executeCodeWithInput(
+            var result = codeExecutionService.executeCodeWithInput(
                     request.getCode(), 
                     request.getLanguage(), 
                     request.getInput()

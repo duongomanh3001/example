@@ -5,6 +5,7 @@ import iuh.fit.cscore_be.enums.Role;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -69,4 +70,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
     
     List<User> findByUsernameContainingIgnoreCaseOrFullNameContainingIgnoreCaseOrEmailContainingIgnoreCase(
             String username, String fullName, String email);
+    
+    // Additional method for admin functionality
+    @Query("SELECT COUNT(u) FROM User u WHERE u.isActive = true")
+    long countActiveUsers();
 }

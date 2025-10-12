@@ -1,6 +1,6 @@
 package iuh.fit.cscore_be.controller;
 
-import iuh.fit.cscore_be.service.HybridCodeExecutionService;
+import iuh.fit.cscore_be.service.CodeExecutionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -17,16 +17,16 @@ import java.util.Map;
 @CrossOrigin(origins = {"http://localhost:3000", "http://localhost:3001"})
 public class TestExecutionController {
 
-    private final HybridCodeExecutionService hybridCodeExecutionService;
+    private final CodeExecutionService codeExecutionService;
 
     /**
      * Get current execution status and configuration
      */
     @GetMapping("/status")
     @PreAuthorize("hasRole('ADMIN') or hasRole('TEACHER')")
-    public ResponseEntity<HybridCodeExecutionService.ExecutionInfo> getExecutionStatus() {
+    public ResponseEntity<Map<String, Object>> getExecutionStatus() {
         try {
-            HybridCodeExecutionService.ExecutionInfo info = hybridCodeExecutionService.getExecutionInfo();
+            Map<String, Object> info = codeExecutionService.getExecutionInfo();
             return ResponseEntity.ok(info);
         } catch (Exception e) {
             log.error("Error getting execution status", e);
@@ -44,7 +44,7 @@ public class TestExecutionController {
             log.info("Testing code execution with language: {}", request.getLanguage());
             
             long startTime = System.currentTimeMillis();
-            var result = hybridCodeExecutionService.executeCode(request.getCode(), request.getLanguage());
+            var result = codeExecutionService.executeCode(request.getCode(), request.getLanguage());
             long duration = System.currentTimeMillis() - startTime;
             
             Map<String, Object> response = new HashMap<>();
@@ -54,7 +54,7 @@ public class TestExecutionController {
             response.put("compilationError", result.getCompilationError());
             response.put("executionTime", duration);
             response.put("language", result.getLanguage());
-            response.put("executionInfo", hybridCodeExecutionService.getExecutionInfo());
+            response.put("executionInfo", codeExecutionService.getExecutionInfo());
             
             return ResponseEntity.ok(response);
             
@@ -79,7 +79,7 @@ public class TestExecutionController {
             log.info("Testing code execution with input for language: {}", request.getLanguage());
             
             long startTime = System.currentTimeMillis();
-            var result = hybridCodeExecutionService.executeCodeWithInput(
+            var result = codeExecutionService.executeCodeWithInput(
                     request.getCode(), 
                     request.getLanguage(), 
                     request.getInput()
@@ -94,7 +94,7 @@ public class TestExecutionController {
             response.put("executionTime", duration);
             response.put("language", result.getLanguage());
             response.put("input", request.getInput());
-            response.put("executionInfo", hybridCodeExecutionService.getExecutionInfo());
+            response.put("executionInfo", codeExecutionService.getExecutionInfo());
             
             return ResponseEntity.ok(response);
             

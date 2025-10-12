@@ -3,6 +3,9 @@ package iuh.fit.cscore_be.service;
 import iuh.fit.cscore_be.dto.request.CreateQuestionOptionRequest;
 import iuh.fit.cscore_be.dto.request.CreateQuestionRequest;
 import iuh.fit.cscore_be.dto.request.CreateTestCaseRequest;
+import iuh.fit.cscore_be.dto.response.QuestionOptionResponse;
+import iuh.fit.cscore_be.dto.response.QuestionResponse;
+import iuh.fit.cscore_be.dto.response.TestCaseResponse;
 import iuh.fit.cscore_be.entity.Assignment;
 import iuh.fit.cscore_be.entity.Question;
 import iuh.fit.cscore_be.entity.QuestionOption;
@@ -15,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -99,5 +103,53 @@ public class QuestionService {
     
     public Long countQuestionsByAssignment(Long assignmentId) {
         return questionRepository.countByAssignmentId(assignmentId);
+    }
+    
+    public QuestionResponse convertToResponse(Question question) {
+        QuestionResponse response = new QuestionResponse();
+        response.setId(question.getId());
+        response.setAssignmentId(question.getAssignment().getId());
+        response.setTitle(question.getTitle());
+        response.setDescription(question.getDescription());
+        response.setQuestionType(question.getQuestionType());
+        response.setPoints(question.getPoints());
+        response.setOrderIndex(question.getOrderIndex());
+        response.setCreatedAt(question.getCreatedAt());
+        response.setUpdatedAt(question.getUpdatedAt());
+        
+        // Convert test cases
+        List<TestCaseResponse> testCaseResponses = question.getTestCases().stream()
+            .map(this::convertTestCaseToResponse)
+            .collect(Collectors.toList());
+        response.setTestCases(testCaseResponses);
+        
+        // Convert question options
+        List<QuestionOptionResponse> optionResponses = question.getQuestionOptions().stream()
+            .map(this::convertOptionToResponse)
+            .collect(Collectors.toList());
+        response.setOptions(optionResponses);
+        
+        return response;
+    }
+    
+    private TestCaseResponse convertTestCaseToResponse(TestCase testCase) {
+        TestCaseResponse response = new TestCaseResponse();
+        response.setId(testCase.getId());
+        response.setInput(testCase.getInput());
+        response.setExpectedOutput(testCase.getExpectedOutput());
+        response.setTestCode(testCase.getTestCode());
+        response.setIsHidden(testCase.getIsHidden());
+        response.setWeight(testCase.getWeight());
+        response.setTimeLimit(testCase.getTimeLimit());
+        response.setMemoryLimit(testCase.getMemoryLimit());
+        return response;
+    }
+    
+    private QuestionOptionResponse convertOptionToResponse(QuestionOption option) {
+        QuestionOptionResponse response = new QuestionOptionResponse();
+        response.setId(option.getId());
+        response.setOptionText(option.getOptionText());
+        response.setOptionOrder(option.getOptionOrder());
+        return response;
     }
 }

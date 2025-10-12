@@ -3,7 +3,7 @@ package iuh.fit.cscore_be.controller;
 import iuh.fit.cscore_be.dto.response.EnhancedAutoGradingResponse;
 import iuh.fit.cscore_be.entity.User;
 import iuh.fit.cscore_be.security.UserPrincipal;
-import iuh.fit.cscore_be.service.EnhancedAutoGradingService;
+import iuh.fit.cscore_be.service.AutoGradingService;
 import iuh.fit.cscore_be.service.SubmissionService;
 import iuh.fit.cscore_be.service.UserService;
 import lombok.RequiredArgsConstructor;
@@ -26,7 +26,7 @@ import java.util.concurrent.CompletableFuture;
 @Slf4j
 public class EnhancedGradingController {
 
-    private final EnhancedAutoGradingService enhancedAutoGradingService;
+    private final AutoGradingService autoGradingService;
     private final SubmissionService submissionService;
     private final UserService userService;
 
@@ -46,7 +46,7 @@ public class EnhancedGradingController {
                     user.getUsername(), submissionId);
             
             // Trigger enhanced grading asynchronously
-            CompletableFuture<Double> futureScore = enhancedAutoGradingService.gradeSubmissionEnhanced(submissionId);
+            CompletableFuture<Double> futureScore = autoGradingService.gradeSubmissionEnhanced(submissionId);
             
             return ResponseEntity.ok("Enhanced grading started for submission " + submissionId + 
                     ". The process will run in background and results will be available shortly.");
@@ -116,7 +116,7 @@ public class EnhancedGradingController {
                     user.getUsername(), request.getSubmissionIds().size());
             
             for (Long submissionId : request.getSubmissionIds()) {
-                enhancedAutoGradingService.gradeSubmissionEnhanced(submissionId);
+                autoGradingService.gradeSubmissionEnhanced(submissionId);
             }
             
             return ResponseEntity.ok("Batch enhanced grading started for " + 

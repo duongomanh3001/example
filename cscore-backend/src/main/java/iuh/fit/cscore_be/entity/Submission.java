@@ -70,6 +70,9 @@ public class Submission {
     @Column(name = "graded_time")
     private LocalDateTime gradedTime;
     
+    @Column(columnDefinition = "TEXT")
+    private String gradingDetails;
+    
     @OneToMany(mappedBy = "submission", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @JsonIgnore
     private List<TestResult> testResults = new ArrayList<>();

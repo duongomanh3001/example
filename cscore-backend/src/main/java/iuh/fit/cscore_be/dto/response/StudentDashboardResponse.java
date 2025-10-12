@@ -28,5 +28,42 @@ public class StudentDashboardResponse {
         private Long gradedSubmissions;
         private Double bestScore;
         private Integer coursesEnrolled;
+        
+        public static Builder builder() {
+            return new Builder();
+        }
+        
+        public static class Builder {
+            private StudentStatistics statistics = new StudentStatistics();
+            
+            public Builder totalSubmissions(Long totalSubmissions) {
+                statistics.totalSubmissions = totalSubmissions;
+                return this;
+            }
+            
+            public Builder pendingSubmissions(Long pendingSubmissions) {
+                statistics.pendingSubmissions = pendingSubmissions;
+                return this;
+            }
+            
+            public Builder gradedSubmissions(Long gradedSubmissions) {
+                statistics.gradedSubmissions = gradedSubmissions;
+                return this;
+            }
+            
+            public Builder bestScore(Double bestScore) {
+                statistics.bestScore = bestScore;
+                return this;
+            }
+            
+            public Builder coursesEnrolled(Integer coursesEnrolled) {
+                statistics.coursesEnrolled = coursesEnrolled;
+                return this;
+            }
+            
+            public StudentStatistics build() {
+                return statistics;
+            }
+        }
     }
 }

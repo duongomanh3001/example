@@ -56,4 +56,36 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
     
     @Query("SELECT AVG(s.score) FROM Submission s WHERE s.assignment = :assignment AND s.score IS NOT NULL")
     Double getAverageScoreByAssignment(@Param("assignment") Assignment assignment);
+    
+    // Additional methods for enhanced functionality
+    Optional<Submission> findByIdAndStudent(Long id, User student);
+    
+    @Query("SELECT s FROM Submission s WHERE s.student = :student AND s.assignment = :assignment ORDER BY s.submissionTime DESC")
+    Page<Submission> findByStudentAndAssignment(@Param("student") User student, @Param("assignment") Assignment assignment, Pageable pageable);
+    
+    @Query("SELECT COUNT(s) FROM Submission s WHERE s.student = :student AND s.assignment = :assignment")
+    Long countByStudentAndAssignment(@Param("student") User student, @Param("assignment") Assignment assignment);
+    
+    @Query("SELECT s FROM Submission s WHERE s.assignment.id = :assignmentId AND s.student.id = :studentId ORDER BY s.submissionTime DESC")
+    Page<Submission> findByAssignmentIdAndStudentId(@Param("assignmentId") Long assignmentId, @Param("studentId") Long studentId, Pageable pageable);
+    
+    @Query("SELECT COUNT(s) FROM Submission s WHERE s.assignment.id = :assignmentId AND s.status = :status")
+    Long countByAssignmentIdAndStatus(@Param("assignmentId") Long assignmentId, @Param("status") SubmissionStatus status);
+    
+    // Additional methods for admin functionality  
+    @Query("SELECT COUNT(s) FROM Submission s WHERE s.submissionTime >= :date")
+    Long countSubmissionsAfter(@Param("date") java.time.LocalDateTime date);
+    
+    // Missing methods for assignment management
+    @Query("SELECT COUNT(s) FROM Submission s WHERE s.assignment = :assignment AND s.status = 'SUBMITTED'")
+    Long countByAssignmentAndStatusSubmitted(@Param("assignment") Assignment assignment);
+    
+    @Query("SELECT COUNT(s) FROM Submission s WHERE s.assignment = :assignment AND s.status = 'GRADED'")
+    Long countByAssignmentAndStatusGraded(@Param("assignment") Assignment assignment);
+    
+    @Query("SELECT AVG(s.score) FROM Submission s WHERE s.assignment = :assignment AND s.score IS NOT NULL")
+    Double calculateAverageScoreByAssignment(@Param("assignment") Assignment assignment);
+    
+    @Query("SELECT AVG(s.score) FROM Submission s WHERE s.assignment.course.teacher = :teacher AND s.score IS NOT NULL")
+    Double calculateAverageScoreByTeacher(@Param("teacher") User teacher);
 }

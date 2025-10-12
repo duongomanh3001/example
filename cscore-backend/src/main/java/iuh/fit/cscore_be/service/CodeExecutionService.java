@@ -2,25 +2,37 @@ package iuh.fit.cscore_be.service;
 
 import iuh.fit.cscore_be.dto.response.CodeExecutionResponse;
 import iuh.fit.cscore_be.dto.response.TestResultResponse;
-import iuh.fit.cscore_be.entity.Assignment;
 import iuh.fit.cscore_be.entity.Question;
 import iuh.fit.cscore_be.entity.Submission;
 import iuh.fit.cscore_be.entity.TestCase;
 import iuh.fit.cscore_be.entity.TestResult;
+import iuh.fit.cscore_be.enums.ProgrammingLanguage;
 import iuh.fit.cscore_be.enums.SubmissionStatus;
 import iuh.fit.cscore_be.repository.TestResultRepository;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.*;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
 
 import java.io.*;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
 import java.nio.file.*;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.*;
 
+/**
+ * Code Execution Service
+ * Unified service supporting multiple execution strategies:
+ * - LOCAL: Execute code on local server
+ * - JOBE: Execute code via Jobe server
+ * - HYBRID: Try Jobe first, fallback to local
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -28,18 +40,204 @@ public class CodeExecutionService {
 
     private final TestResultRepository testResultRepository;
     private final CodeWrapperService codeWrapperService;
+    
+    private ExecutionStrategy currentStrategy = ExecutionStrategy.LOCAL;
+    private boolean jobeAvailable = false;
+    private final RestTemplate restTemplate = new RestTemplate();
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    
+    // Configuration
+    @Value("${execution.strategy:hybrid}")
+    private String executionStrategy; // hybrid, jobe, local
+    
+    @Value("${jobe.server.url:http://localhost:4000}")
+    private String jobeServerUrl;
+    
+    @Value("${jobe.server.enabled:false}")
+    private boolean jobeEnabled;
+    
+    @Value("${jobe.server.api-key:2AAA7A5F538F4E4B5C4A8B2E9AA2B248FFF}")
+    private String jobeApiKey;
+    
+    // Execution limits
     private static final String TEMP_DIR = System.getProperty("java.io.tmpdir");
     private static final int EXECUTION_TIMEOUT = 30; // seconds
     private static final int COMPILATION_TIMEOUT = 60; // seconds
     private static final long MEMORY_LIMIT = 256 * 1024 * 1024; // 256MB
     private static final int MAX_OUTPUT_LENGTH = 10000; // characters
     
-    // Thread pools for concurrent execution
+    // Thread pool for concurrent execution
     private final ExecutorService executorService = Executors.newFixedThreadPool(
         Math.max(2, Runtime.getRuntime().availableProcessors() / 2)
     );
 
+    /**
+     * Execute code using the configured strategy
+     */
     public CodeExecutionResponse executeCode(String code, String language) {
+        ExecutionStrategy strategy = determineExecutionStrategy();
+        
+        log.info("Executing code using strategy: {} for language: {}", strategy, language);
+        
+        switch (strategy) {
+            case JOBE:
+                return executeWithJobe(code, language);
+            case LOCAL:
+                return executeWithLocal(code, language);
+            case HYBRID:
+            default:
+                return executeWithHybrid(code, language);
+        }
+    }
+
+    /**
+     * Execute code with input using the configured strategy
+     */
+    public CodeExecutionResponse executeCodeWithInput(String code, String language, String input) {
+        ExecutionStrategy strategy = determineExecutionStrategy();
+        
+        log.info("Executing code with input using strategy: {} for language: {}", strategy, language);
+        
+        switch (strategy) {
+            case JOBE:
+                return executeWithInputJobe(code, language, input);
+            case LOCAL:
+                return executeWithInputLocal(code, language, input);
+            case HYBRID:
+            default:
+                return executeWithInputHybrid(code, language, input);
+        }
+    }
+
+    /**
+     * Execute code with test cases (enhanced with wrapper support)
+     */
+    public CodeExecutionResponse executeCodeWithTestCases(String code, String language, 
+                                                         List<TestCase> testCases, 
+                                                         Submission submission, 
+                                                         Question question) {
+        ExecutionStrategy strategy = determineExecutionStrategy();
+        
+        log.info("Executing code with {} test cases using strategy: {} for language: {}", 
+                testCases.size(), strategy, language);
+        
+        CodeExecutionResponse response;
+        switch (strategy) {
+            case JOBE:
+                response = executeWithTestCasesJobe(code, language, testCases, submission, question);
+                break;
+            case LOCAL:
+                response = executeWithTestCasesLocal(code, language, testCases, submission, question);
+                break;
+            case HYBRID:
+            default:
+                response = executeWithTestCasesHybrid(code, language, testCases, submission, question);
+                break;
+        }
+        
+        // Add detailed grading message
+        if (response != null && (response.getMessage() == null || response.getMessage().isEmpty())) {
+            response.setMessage(generateGradingMessage(response));
+        }
+        
+        return response;
+    }
+    
+    // Overloaded method for backward compatibility
+    public CodeExecutionResponse executeCodeWithTestCases(String code, String language, 
+                                                         List<TestCase> testCases, 
+                                                         Submission submission) {
+        return executeCodeWithTestCases(code, language, testCases, submission, null);
+    }
+
+    /**
+     * Check if Jobe server is available
+     */
+    public boolean isJobeServerAvailable() {
+        if (!jobeEnabled) {
+            return false;
+        }
+        
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("X-API-KEY", jobeApiKey);
+            HttpEntity<String> entity = new HttpEntity<>(headers);
+            
+            String url = jobeServerUrl + "/jobe/index.php/restapi/languages";
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+            return response.getStatusCode() == HttpStatus.OK;
+        } catch (Exception e) {
+            log.warn("Jobe server availability check failed: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    // ========== STRATEGY DETERMINATION ==========
+    
+    private ExecutionStrategy determineExecutionStrategy() {
+        switch (executionStrategy.toLowerCase()) {
+            case "jobe":
+                return jobeEnabled && isJobeServerAvailable() ? 
+                       ExecutionStrategy.JOBE : ExecutionStrategy.LOCAL;
+            case "local":
+                return ExecutionStrategy.LOCAL;
+            case "hybrid":
+            default:
+                return jobeEnabled && isJobeServerAvailable() ? 
+                       ExecutionStrategy.JOBE : ExecutionStrategy.LOCAL;
+        }
+    }
+
+    // ========== JOBE EXECUTION METHODS ==========
+    
+    private CodeExecutionResponse executeWithJobe(String code, String language) {
+        try {
+            return performJobeExecution(code, language, null);
+        } catch (Exception e) {
+            log.warn("Jobe execution failed, falling back to local: {}", e.getMessage());
+            return executeWithLocal(code, language);
+        }
+    }
+
+    private CodeExecutionResponse executeWithInputJobe(String code, String language, String input) {
+        try {
+            CodeExecutionResponse response = performJobeExecution(code, language, input);
+            
+            // Check for math library issues
+            if (!response.isSuccess() && response.getError() != null && 
+                isMathLibraryError(response.getError())) {
+                log.warn("Jobe execution failed due to math library issues, falling back to local");
+                return executeWithInputLocal(code, language, input);
+            }
+            
+            return response;
+        } catch (Exception e) {
+            log.warn("Jobe execution with input failed, falling back to local: {}", e.getMessage());
+            return executeWithInputLocal(code, language, input);
+        }
+    }
+
+    private CodeExecutionResponse executeWithTestCasesJobe(String code, String language, 
+                                                          List<TestCase> testCases, 
+                                                          Submission submission, 
+                                                          Question question) {
+        // If question parameter is provided, we need code wrapping - fall back to local
+        if (question != null) {
+            log.info("Question parameter provided, falling back to local execution for code wrapping support");
+            return executeWithTestCasesLocal(code, language, testCases, submission, question);
+        }
+        
+        try {
+            return performJobeTestCaseExecution(code, language, testCases, submission);
+        } catch (Exception e) {
+            log.warn("Jobe execution with test cases failed, falling back to local: {}", e.getMessage());
+            return executeWithTestCasesLocal(code, language, testCases, submission, question);
+        }
+    }
+
+    // ========== LOCAL EXECUTION METHODS ==========
+    
+    private CodeExecutionResponse executeWithLocal(String code, String language) {
         try {
             String uniqueId = UUID.randomUUID().toString();
             Path workDir = Paths.get(TEMP_DIR, "cscore_execution", uniqueId);
@@ -50,21 +248,21 @@ public class CodeExecutionService {
 
             switch (language.toLowerCase()) {
                 case "java":
-                    return executeJavaCode(code, workDir, response);
+                    return executeJavaCodeLocal(code, workDir, response);
                 case "python":
-                    return executePythonCode(code, workDir, response);
+                    return executePythonCodeLocal(code, workDir, response);
                 case "cpp":
                 case "c++":
-                    return executeCppCode(code, workDir, response);
+                    return executeCppCodeLocal(code, workDir, response);
                 case "c":
-                    return executeCCode(code, workDir, response);
+                    return executeCCodeLocal(code, workDir, response);
                 default:
                     response.setSuccess(false);
                     response.setError("Ngôn ngữ lập trình không được hỗ trợ: " + language);
                     return response;
             }
         } catch (Exception e) {
-            log.error("Error executing code", e);
+            log.error("Error executing code locally", e);
             CodeExecutionResponse response = new CodeExecutionResponse();
             response.setSuccess(false);
             response.setError("Lỗi hệ thống khi thực thi code: " + e.getMessage());
@@ -72,21 +270,18 @@ public class CodeExecutionService {
         }
     }
 
-    public CodeExecutionResponse executeCodeWithInput(String code, String language, String input) {
+    private CodeExecutionResponse executeWithInputLocal(String code, String language, String input) {
         try {
             String uniqueId = UUID.randomUUID().toString();
             Path workDir = Paths.get(TEMP_DIR, "cscore_execution", uniqueId);
             Files.createDirectories(workDir);
 
-            CodeExecutionResponse response = new CodeExecutionResponse();
-            response.setLanguage(language);
-
             long startTime = System.currentTimeMillis();
-            
-            String output = executeCodeWithInput(code, language, input, workDir, EXECUTION_TIMEOUT * 1000);
-            
+            String output = executeCodeWithInputLocal(code, language, input, workDir, EXECUTION_TIMEOUT * 1000);
             long executionTime = System.currentTimeMillis() - startTime;
             
+            CodeExecutionResponse response = new CodeExecutionResponse();
+            response.setLanguage(language);
             response.setSuccess(true);
             response.setOutput(output);
             response.setExecutionTime(executionTime);
@@ -97,70 +292,43 @@ public class CodeExecutionService {
             return response;
             
         } catch (Exception e) {
-            log.error("Error executing code with input", e);
+            log.error("Error executing code with input locally", e);
             CodeExecutionResponse response = new CodeExecutionResponse();
             response.setSuccess(false);
-            response.setError("Lỗi hệ thống khi thực thi code: " + e.getMessage());
+            response.setError("Lỗi khi thực thi code với input: " + e.getMessage());
             return response;
         }
     }
 
-    public CodeExecutionResponse executeCodeWithTestCases(String code, String language, List<TestCase> testCases, Submission submission) {
-        return executeCodeWithTestCases(code, language, testCases, submission, null);
-    }
-
-    public CodeExecutionResponse executeCodeWithTestCases(String code, String language, List<TestCase> testCases, Submission submission, Question question) {
+    private CodeExecutionResponse executeWithTestCasesLocal(String code, String language, 
+                                                           List<TestCase> testCases, 
+                                                           Submission submission, 
+                                                           Question question) {
         CodeExecutionResponse response = new CodeExecutionResponse();
         response.setLanguage(language);
-        
-        // Apply code wrapping if question is provided and code doesn't have main function
-        String executableCode = code;
-        if (question != null) {
-            log.debug("Original student code:\n{}", code);
-            // Use enhanced wrapper with test case analysis
-            executableCode = codeWrapperService.wrapFunctionCode(code, question, language, testCases);
-            if (!executableCode.equals(code)) {
-                log.info("Applied enhanced code wrapping for question {} in language {} with {} test cases", 
-                    question.getId(), language, testCases.size());
-                log.debug("Wrapped code:\n{}", executableCode);
-            }
-        }
         
         List<TestResultResponse> testResults = new ArrayList<>();
         int passedTests = 0;
         double totalScore = 0.0;
         long totalExecutionTime = 0L;
-        long maxMemoryUsed = 0L;
-        boolean compilationSuccessful = true;
-        String compilationError = null;
         
         try {
-            String uniqueId = UUID.randomUUID().toString();
-            Path workDir = Paths.get(TEMP_DIR, "cscore_execution", uniqueId);
-            Files.createDirectories(workDir);
-
-            log.info("Starting code execution for {} test cases with language: {}", testCases.size(), language);
+            log.info("Executing code with {} test cases locally - Language: {}", testCases.size(), language);
             
-            // Pre-compile if needed (for compiled languages)
-            if (isCompiledLanguage(language)) {
-                try {
-                    preCompileCode(executableCode, language, workDir);
-                } catch (CompilationException e) {
-                    response.setSuccess(false);
-                    response.setError(e.getMessage());
-                    response.setCompilationError(e.getMessage());
-                    response.setCompiled(false);
-                    return response;
-                }
+            // Wrap code if question provided
+            String executableCode = code;
+            if (question != null) {
+                executableCode = codeWrapperService.wrapFunctionCode(code, question, language, testCases);
+                log.debug("Code wrapped for execution");
             }
-
-            // Execute test cases with improved error handling
+            
+            // Execute each test case
             for (int i = 0; i < testCases.size(); i++) {
                 TestCase testCase = testCases.get(i);
                 log.debug("Executing test case {} of {}", i + 1, testCases.size());
                 
                 try {
-                    TestResultResponse testResult = executeTestCase(code, executableCode, language, testCase, workDir);
+                    TestResultResponse testResult = executeTestCaseLocal(executableCode, language, testCase);
                     testResults.add(testResult);
                     
                     // Update statistics
@@ -173,11 +341,7 @@ public class CodeExecutionService {
                         totalExecutionTime += testResult.getExecutionTime();
                     }
                     
-                    if (testResult.getMemoryUsed() != null) {
-                        maxMemoryUsed = Math.max(maxMemoryUsed, testResult.getMemoryUsed());
-                    }
-                    
-                    // Save test result to database asynchronously
+                    // Save test result asynchronously
                     if (submission != null) {
                         CompletableFuture.runAsync(() -> saveTestResult(submission, testCase, testResult), executorService);
                     }
@@ -185,7 +349,6 @@ public class CodeExecutionService {
                 } catch (Exception e) {
                     log.error("Error executing test case {}: {}", testCase.getId(), e.getMessage());
                     
-                    // Create failed test result
                     TestResultResponse failedResult = createFailedTestResult(testCase, e.getMessage());
                     testResults.add(failedResult);
                     
@@ -200,12 +363,10 @@ public class CodeExecutionService {
             response.setPassedTests(passedTests);
             response.setTotalTests(testCases.size());
             response.setScore(totalScore);
-            
-            // Cleanup
-            deleteDirectory(workDir);
+            response.setExecutionTime(totalExecutionTime);
             
         } catch (Exception e) {
-            log.error("Error executing code with test cases", e);
+            log.error("Error executing code with test cases locally", e);
             response.setSuccess(false);
             response.setError("Lỗi khi thực thi test cases: " + e.getMessage());
         }
@@ -213,130 +374,278 @@ public class CodeExecutionService {
         return response;
     }
 
-    private TestResultResponse executeTestCase(String rawCode, String wrappedCode, String language, TestCase testCase, Path workDir) {
-        TestResultResponse result = new TestResultResponse();
-        result.setTestCaseId(testCase.getId());
-        result.setInput(testCase.getInput());
-        result.setExpectedOutput(testCase.getExpectedOutput().trim());
+    // ========== HYBRID EXECUTION METHODS ==========
+    
+    private CodeExecutionResponse executeWithHybrid(String code, String language) {
+        return jobeEnabled && isJobeServerAvailable() ? 
+               executeWithJobe(code, language) : executeWithLocal(code, language);
+    }
+
+    private CodeExecutionResponse executeWithInputHybrid(String code, String language, String input) {
+        return jobeEnabled && isJobeServerAvailable() ? 
+               executeWithInputJobe(code, language, input) : executeWithInputLocal(code, language, input);
+    }
+
+    private CodeExecutionResponse executeWithTestCasesHybrid(String code, String language, 
+                                                            List<TestCase> testCases, 
+                                                            Submission submission, 
+                                                            Question question) {
+        return jobeEnabled && isJobeServerAvailable() ? 
+               executeWithTestCasesJobe(code, language, testCases, submission, question) : 
+               executeWithTestCasesLocal(code, language, testCases, submission, question);
+    }
+
+    // ========== JOBE IMPLEMENTATION DETAILS ==========
+    
+    private CodeExecutionResponse performJobeExecution(String code, String language, String input) throws Exception {
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("run_spec", createJobeRequest(code, language, input));
         
-        try {
-            long startTime = System.currentTimeMillis();
-            
-            String output;
-            
-            // If testCode is provided, use it to create complete executable code
-            if (testCase.getTestCode() != null && !testCase.getTestCode().trim().isEmpty()) {
-                log.debug("Using testCode for test case: {}", testCase.getId());
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("X-API-KEY", jobeApiKey);
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
+        
+        String url = jobeServerUrl + "/jobe/index.php/restapi/runs";
+        ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
+        
+        return parseJobeResponse(response.getBody(), language);
+    }
+
+    private CodeExecutionResponse performJobeTestCaseExecution(String code, String language, 
+                                                              List<TestCase> testCases, 
+                                                              Submission submission) throws Exception {
+        CodeExecutionResponse response = new CodeExecutionResponse();
+        response.setLanguage(language);
+        
+        List<TestResultResponse> testResults = new ArrayList<>();
+        int passedTests = 0;
+        double totalScore = 0.0;
+        long totalExecutionTime = 0L;
+        
+        for (TestCase testCase : testCases) {
+            try {
+                TestResultResponse testResult = executeTestCaseViaJobe(code, language, testCase);
+                testResults.add(testResult);
                 
-                // Combine raw student code with test code (not wrapped code)
-                String executableCode = combineStudentCodeWithTestCode(rawCode, testCase.getTestCode(), language);
-                log.debug("Generated executable code:\n{}", executableCode);
+                if (testResult.isPassed()) {
+                    passedTests++;
+                    totalScore += testCase.getWeight();
+                }
                 
-                // Execute the combined code without additional input (testCode contains the test logic)
-                output = executeCodeWithInput(executableCode, language, "", workDir, testCase.getTimeLimit());
-            } else {
-                // Fallback: use traditional input-based testing with wrapped code
-                String processedInput = preprocessTestInput(testCase.getInput());
-                log.debug("Original input: '{}', Processed input: '{}'", testCase.getInput(), processedInput);
+                if (testResult.getExecutionTime() != null) {
+                    totalExecutionTime += testResult.getExecutionTime();
+                }
                 
-                output = executeCodeWithInput(wrappedCode, language, processedInput, workDir, testCase.getTimeLimit());
+                if (submission != null) {
+                    CompletableFuture.runAsync(() -> saveTestResult(submission, testCase, testResult), executorService);
+                }
+                
+            } catch (Exception e) {
+                TestResultResponse failedResult = createFailedTestResult(testCase, e.getMessage());
+                testResults.add(failedResult);
+                
+                if (submission != null) {
+                    CompletableFuture.runAsync(() -> saveTestResult(submission, testCase, failedResult), executorService);
+                }
             }
-            
-            long executionTime = System.currentTimeMillis() - startTime;
-            result.setExecutionTime(executionTime);
-            result.setActualOutput(output.trim());
-            
-            boolean passed = output.trim().equals(testCase.getExpectedOutput().trim());
-            result.setPassed(passed);
+        }
+        
+        response.setSuccess(true);
+        response.setTestResults(testResults);
+        response.setPassedTests(passedTests);
+        response.setTotalTests(testCases.size());
+        response.setScore(totalScore);
+        response.setExecutionTime(totalExecutionTime);
+        
+        return response;
+    }
+
+    private Map<String, Object> createJobeRequest(String code, String language, String input) {
+        Map<String, Object> runSpec = new HashMap<>();
+        runSpec.put("language_id", mapLanguageToJobeId(language));
+        runSpec.put("sourcefilename", getSourceFileName(language));
+        runSpec.put("sourcecode", code);
+        
+        if (input != null && !input.trim().isEmpty()) {
+            runSpec.put("input", input);
+        }
+        
+        // Add compilation and execution parameters
+        Map<String, Object> parameters = new HashMap<>();
+        parameters.put("memorylimit", (int)(MEMORY_LIMIT / (1024 * 1024))); // Convert to MB
+        parameters.put("cputime", EXECUTION_TIMEOUT);
+        runSpec.put("parameters", parameters);
+        
+        return runSpec;
+    }
+
+    private String mapLanguageToJobeId(String language) {
+        switch (language.toLowerCase()) {
+            case "java": return "java";
+            case "python": return "python3";
+            case "cpp":
+            case "c++": return "cpp";
+            case "c": return "c";
+            default: return language.toLowerCase();
+        }
+    }
+
+    private String getSourceFileName(String language) {
+        switch (language.toLowerCase()) {
+            case "java": return "Main.java";
+            case "python": return "main.py";
+            case "cpp":
+            case "c++": return "main.cpp";
+            case "c": return "main.c";
+            default: return "main.txt";
+        }
+    }
+
+    private CodeExecutionResponse parseJobeResponse(String responseBody, String language) throws Exception {
+        JsonNode jsonResponse = objectMapper.readTree(responseBody);
+        
+        CodeExecutionResponse response = new CodeExecutionResponse();
+        response.setLanguage(language);
+        
+        // Check for compilation or runtime errors
+        if (jsonResponse.has("outcome") && jsonResponse.get("outcome").asInt() != 15) {
+            response.setSuccess(false);
+            String stderr = jsonResponse.has("stderr") ? jsonResponse.get("stderr").asText() : "";
+            String cmpinfo = jsonResponse.has("cmpinfo") ? jsonResponse.get("cmpinfo").asText() : "";
+            response.setError(stderr.isEmpty() ? cmpinfo : stderr);
+        } else {
+            response.setSuccess(true);
+            response.setOutput(jsonResponse.has("stdout") ? jsonResponse.get("stdout").asText() : "");
+        }
+        
+        // Set execution time if available
+        if (jsonResponse.has("cputime")) {
+            response.setExecutionTime((long)(jsonResponse.get("cputime").asDouble() * 1000));
+        }
+        
+        return response;
+    }
+
+    private TestResultResponse executeTestCaseViaJobe(String code, String language, TestCase testCase) throws Exception {
+        long startTime = System.currentTimeMillis();
+        
+        CodeExecutionResponse executionResult = performJobeExecution(code, language, testCase.getInput());
+        
+        long executionTime = System.currentTimeMillis() - startTime;
+        
+        TestResultResponse testResult = new TestResultResponse();
+        testResult.setTestCaseId(testCase.getId());
+        testResult.setInput(testCase.getInput());
+        testResult.setExpectedOutput(testCase.getExpectedOutput());
+        testResult.setActualOutput(executionResult.getOutput());
+        testResult.setExecutionTime(executionTime);
+        
+        if (!executionResult.isSuccess()) {
+            testResult.setPassed(false);
+            testResult.setErrorMessage(executionResult.getError());
+        } else {
+            boolean passed = compareOutputs(testCase.getExpectedOutput(), executionResult.getOutput());
+            testResult.setPassed(passed);
             
             if (!passed) {
-                result.setErrorMessage("Output không khớp với kết quả mong đợi");
+                testResult.setErrorMessage("Kết quả không khớp với expected output");
             }
-            
-        } catch (TimeoutException e) {
-            result.setPassed(false);
-            result.setErrorMessage("Vượt quá thời gian thực thi cho phép");
-            result.setExecutionTime((long) testCase.getTimeLimit());
-        } catch (Exception e) {
-            result.setPassed(false);
-            result.setErrorMessage("Lỗi thực thi: " + e.getMessage());
         }
         
-        return result;
+        return testResult;
     }
 
-    /**
-     * Preprocess test input to handle escaped quotes and proper formatting
-     */
-    private String preprocessTestInput(String input) {
-        if (input == null) return "";
-        
-        // Handle escaped quotes in JSON-like format
-        String processed = input;
-        
-        // If input starts and ends with quotes, remove outer quotes
-        if (processed.startsWith("\"") && processed.endsWith("\"") && processed.length() > 1) {
-            processed = processed.substring(1, processed.length() - 1);
-        }
-        
-        // Replace escaped quotes with actual quotes
-        processed = processed.replace("\\\"", "\"");
-        
-        // Handle other common escape sequences
-        processed = processed.replace("\\\\", "\\");
-        processed = processed.replace("\\n", "\n");
-        processed = processed.replace("\\t", "\t");
-        
-        return processed;
-    }
-
-    private void saveTestResult(Submission submission, TestCase testCase, TestResultResponse testResult) {
-        TestResult entity = new TestResult();
-        entity.setSubmission(submission);
-        entity.setTestCase(testCase);
-        entity.setActualOutput(testResult.getActualOutput());
-        entity.setIsPassed(testResult.isPassed());
-        entity.setExecutionTime(testResult.getExecutionTime());
-        entity.setErrorMessage(testResult.getErrorMessage());
-        
-        testResultRepository.save(entity);
-    }
-
-    private CodeExecutionResponse executeJavaCode(String code, Path workDir, CodeExecutionResponse response) {
+    // ========== LOCAL EXECUTION IMPLEMENTATION ==========
+    
+    private CodeExecutionResponse executeJavaCodeLocal(String code, Path workDir, CodeExecutionResponse response) {
         try {
-            // Extract class name from code
-            String className = extractJavaClassName(code);
-            if (className == null) {
-                className = "Solution"; // Default fallback
-            }
+            // Write Java source file
+            Path sourceFile = workDir.resolve("Main.java");
+            Files.write(sourceFile, code.getBytes());
             
-            // Write Java file with correct class name
-            Path javaFile = workDir.resolve(className + ".java");
-            Files.write(javaFile, code.getBytes());
-
             // Compile
-            ProcessBuilder compileBuilder = new ProcessBuilder("javac", javaFile.toString());
-            compileBuilder.directory(workDir.toFile());
-            Process compileProcess = compileBuilder.start();
+            Process compileProcess = new ProcessBuilder("javac", sourceFile.toString())
+                    .directory(workDir.toFile())
+                    .redirectErrorStream(true)
+                    .start();
             
-            if (compileProcess.waitFor() != 0) {
+            boolean compiled = compileProcess.waitFor(COMPILATION_TIMEOUT, TimeUnit.SECONDS);
+            if (!compiled || compileProcess.exitValue() != 0) {
+                String error = readProcessOutput(compileProcess.getInputStream());
                 response.setSuccess(false);
-                response.setError(readErrorStream(compileProcess));
+                response.setError("Compilation error: " + error);
                 return response;
             }
-
-            // Run with the correct class name
-            ProcessBuilder runBuilder = new ProcessBuilder("java", "-cp", workDir.toString(), className);
-            runBuilder.directory(workDir.toFile());
-            Process runProcess = runBuilder.start();
             
-            String output = readOutputStream(runProcess, EXECUTION_TIMEOUT);
+            // Execute
+            Process execProcess = new ProcessBuilder("java", "-cp", workDir.toString(), "Main")
+                    .directory(workDir.toFile())
+                    .start();
+            
+            boolean executed = execProcess.waitFor(EXECUTION_TIMEOUT, TimeUnit.SECONDS);
+            if (!executed) {
+                execProcess.destroyForcibly();
+                response.setSuccess(false);
+                response.setError("Execution timeout");
+                return response;
+            }
+            
+            if (execProcess.exitValue() != 0) {
+                String error = readProcessOutput(execProcess.getErrorStream());
+                response.setSuccess(false);
+                response.setError("Runtime error: " + error);
+                return response;
+            }
+            
+            String output = readProcessOutput(execProcess.getInputStream());
             response.setSuccess(true);
             response.setOutput(output);
             
         } catch (Exception e) {
             response.setSuccess(false);
-            response.setError("Lỗi thực thi Java: " + e.getMessage());
+            response.setError("Error executing Java code: " + e.getMessage());
+        } finally {
+            // Cleanup
+            deleteDirectory(workDir);
+        }
+        
+        return response;
+    }
+
+    private CodeExecutionResponse executePythonCodeLocal(String code, Path workDir, CodeExecutionResponse response) {
+        try {
+            // Write Python source file
+            Path sourceFile = workDir.resolve("main.py");
+            Files.write(sourceFile, code.getBytes());
+            
+            // Execute
+            Process execProcess = new ProcessBuilder("python", sourceFile.toString())
+                    .directory(workDir.toFile())
+                    .start();
+            
+            boolean executed = execProcess.waitFor(EXECUTION_TIMEOUT, TimeUnit.SECONDS);
+            if (!executed) {
+                execProcess.destroyForcibly();
+                response.setSuccess(false);
+                response.setError("Execution timeout");
+                return response;
+            }
+            
+            if (execProcess.exitValue() != 0) {
+                String error = readProcessOutput(execProcess.getErrorStream());
+                response.setSuccess(false);
+                response.setError("Runtime error: " + error);
+                return response;
+            }
+            
+            String output = readProcessOutput(execProcess.getInputStream());
+            response.setSuccess(true);
+            response.setOutput(output);
+            
+        } catch (Exception e) {
+            response.setSuccess(false);
+            response.setError("Error executing Python code: " + e.getMessage());
         } finally {
             deleteDirectory(workDir);
         }
@@ -344,90 +653,55 @@ public class CodeExecutionService {
         return response;
     }
 
-    private CodeExecutionResponse executePythonCode(String code, Path workDir, CodeExecutionResponse response) {
+    private CodeExecutionResponse executeCppCodeLocal(String code, Path workDir, CodeExecutionResponse response) {
         try {
-            // Write Python file
-            Path pythonFile = workDir.resolve("solution.py");
-            Files.write(pythonFile, code.getBytes());
-
-            // Try different Python commands based on OS
-            String[] pythonCommands = getPythonCommands();
-            ProcessBuilder runBuilder = null;
+            // Write C++ source file
+            Path sourceFile = workDir.resolve("main.cpp");
+            Files.write(sourceFile, code.getBytes());
             
-            for (String pythonCmd : pythonCommands) {
-                try {
-                    runBuilder = new ProcessBuilder(pythonCmd, pythonFile.toString());
-                    runBuilder.directory(workDir.toFile());
-                    break;
-                } catch (Exception e) {
-                    // Try next command
-                    continue;
-                }
-            }
-            
-            if (runBuilder == null) {
-                response.setSuccess(false);
-                response.setError("Python không được cài đặt hoặc không tìm thấy trong PATH");
-                return response;
-            }
-            
-            Process runProcess = runBuilder.start();
-            
-            String output = readOutputStream(runProcess, EXECUTION_TIMEOUT);
-            
-            // Check if process completed successfully
-            int exitCode = runProcess.waitFor();
-            if (exitCode != 0) {
-                String errorOutput = readErrorStream(runProcess);
-                response.setSuccess(false);
-                response.setError("Lỗi thực thi Python (Exit Code: " + exitCode + "): " + errorOutput);
-                return response;
-            }
-            
-            response.setSuccess(true);
-            response.setOutput(output);
-            
-        } catch (Exception e) {
-            response.setSuccess(false);
-            response.setError("Lỗi thực thi Python: " + e.getMessage());
-        } finally {
-            deleteDirectory(workDir);
-        }
-        
-        return response;
-    }
-
-    private CodeExecutionResponse executeCppCode(String code, Path workDir, CodeExecutionResponse response) {
-        try {
-            // Write C++ file
-            Path cppFile = workDir.resolve("solution.cpp");
-            Files.write(cppFile, code.getBytes());
-            
-            Path executable = workDir.resolve("solution.exe");
-
             // Compile
-            ProcessBuilder compileBuilder = new ProcessBuilder("g++", "-o", executable.toString(), cppFile.toString());
-            compileBuilder.directory(workDir.toFile());
-            Process compileProcess = compileBuilder.start();
+            Path executableFile = workDir.resolve("main");
+            Process compileProcess = new ProcessBuilder("g++", "-o", executableFile.toString(), 
+                    sourceFile.toString(), "-lm", "-std=c++17")
+                    .directory(workDir.toFile())
+                    .redirectErrorStream(true)
+                    .start();
             
-            if (compileProcess.waitFor() != 0) {
+            boolean compiled = compileProcess.waitFor(COMPILATION_TIMEOUT, TimeUnit.SECONDS);
+            if (!compiled || compileProcess.exitValue() != 0) {
+                String error = readProcessOutput(compileProcess.getInputStream());
                 response.setSuccess(false);
-                response.setError(readErrorStream(compileProcess));
+                response.setError("Compilation error: " + error);
                 return response;
             }
-
-            // Run
-            ProcessBuilder runBuilder = new ProcessBuilder(executable.toString());
-            runBuilder.directory(workDir.toFile());
-            Process runProcess = runBuilder.start();
             
-            String output = readOutputStream(runProcess, EXECUTION_TIMEOUT);
+            // Execute
+            Process execProcess = new ProcessBuilder(executableFile.toString())
+                    .directory(workDir.toFile())
+                    .start();
+            
+            boolean executed = execProcess.waitFor(EXECUTION_TIMEOUT, TimeUnit.SECONDS);
+            if (!executed) {
+                execProcess.destroyForcibly();
+                response.setSuccess(false);
+                response.setError("Execution timeout");
+                return response;
+            }
+            
+            if (execProcess.exitValue() != 0) {
+                String error = readProcessOutput(execProcess.getErrorStream());
+                response.setSuccess(false);
+                response.setError("Runtime error: " + error);
+                return response;
+            }
+            
+            String output = readProcessOutput(execProcess.getInputStream());
             response.setSuccess(true);
             response.setOutput(output);
             
         } catch (Exception e) {
             response.setSuccess(false);
-            response.setError("Lỗi thực thi C++: " + e.getMessage());
+            response.setError("Error executing C++ code: " + e.getMessage());
         } finally {
             deleteDirectory(workDir);
         }
@@ -435,148 +709,55 @@ public class CodeExecutionService {
         return response;
     }
 
-    private CodeExecutionResponse executeCCode(String code, Path workDir, CodeExecutionResponse response) {
+    private CodeExecutionResponse executeCCodeLocal(String code, Path workDir, CodeExecutionResponse response) {
         try {
-            // Write C file with UTF-8 encoding
-            Path cFile = workDir.resolve("solution.c");
-            Files.write(cFile, code.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            // Write C source file
+            Path sourceFile = workDir.resolve("main.c");
+            Files.write(sourceFile, code.getBytes());
             
-            Path executable = workDir.resolve("solution.exe");
-
-            // Get C compiler command based on OS
-            String[] compilerCommands = getCCompilerCommands();
-            ProcessBuilder compileBuilder = null;
-            String usedCompiler = null;
+            // Compile
+            Path executableFile = workDir.resolve("main");
+            Process compileProcess = new ProcessBuilder("gcc", "-o", executableFile.toString(), 
+                    sourceFile.toString(), "-lm", "-std=c99")
+                    .directory(workDir.toFile())
+                    .redirectErrorStream(true)
+                    .start();
             
-            for (String compilerCmd : compilerCommands) {
-                try {
-                    compileBuilder = createGccCompileCommand(compilerCmd, executable.toString(), cFile.toString(), workDir);
-                    compileBuilder.directory(workDir.toFile());
-                    usedCompiler = compilerCmd;
-                    log.debug("Trying C compiler: {}", compilerCmd);
-                    break;
-                } catch (Exception e) {
-                    log.debug("C compiler {} not available: {}", compilerCmd, e.getMessage());
-                    // Try next compiler
-                    continue;
-                }
-            }
-            
-            if (compileBuilder == null) {
+            boolean compiled = compileProcess.waitFor(COMPILATION_TIMEOUT, TimeUnit.SECONDS);
+            if (!compiled || compileProcess.exitValue() != 0) {
+                String error = readProcessOutput(compileProcess.getInputStream());
                 response.setSuccess(false);
-                response.setError("GCC compiler không được cài đặt hoặc không tìm thấy trong PATH");
+                response.setError("Compilation error: " + error);
                 return response;
             }
             
-            log.info("Using C compiler: {}", usedCompiler);
+            // Execute
+            Process execProcess = new ProcessBuilder(executableFile.toString())
+                    .directory(workDir.toFile())
+                    .start();
             
-            Process compileProcess = compileBuilder.start();
-            
-            // Read streams immediately to prevent blocking
-            StringBuilder compileStdout = new StringBuilder();
-            StringBuilder compileStderr = new StringBuilder();
-            
-            // Start threads to read stdout and stderr concurrently
-            Thread stdoutReader = new Thread(() -> {
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(compileProcess.getInputStream()))) {
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        compileStdout.append(line).append("\n");
-                    }
-                } catch (IOException e) {
-                    log.warn("Error reading compilation stdout", e);
-                }
-            });
-            
-            Thread stderrReader = new Thread(() -> {
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(compileProcess.getErrorStream()))) {
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        compileStderr.append(line).append("\n");
-                    }
-                } catch (IOException e) {
-                    log.warn("Error reading compilation stderr", e);
-                }
-            });
-            
-            stdoutReader.start();
-            stderrReader.start();
-            
-            int compileExitCode = compileProcess.waitFor();
-            
-            // Wait for stream readers to complete
-            try {
-                stdoutReader.join(5000); // 5 second timeout
-                stderrReader.join(5000);
-            } catch (InterruptedException e) {
-                log.warn("Interrupted while waiting for stream readers");
-            }
-            
-            if (compileExitCode != 0) {
-                String stdoutStr = compileStdout.toString().trim();
-                String stderrStr = compileStderr.toString().trim();
-                
-                String errorMessage = "Compilation failed (Exit Code: " + compileExitCode + ")";
-                if (!stderrStr.isEmpty()) {
-                    errorMessage += "\nCompilation Error: " + stderrStr;
-                }
-                if (!stdoutStr.isEmpty()) {
-                    errorMessage += "\nCompilation Output: " + stdoutStr;
-                }
-                
-                // Also log the actual source code being compiled for debugging
-                try {
-                    String sourceCode = new String(Files.readAllBytes(cFile), java.nio.charset.StandardCharsets.UTF_8);
-                    log.error("Source code that failed to compile:\n{}", sourceCode);
-                    log.error("Compiler used: {}", usedCompiler);
-                    log.error("Working directory: {}", workDir.toAbsolutePath());
-                    log.error("GCC executable path: {}", usedCompiler);
-                    
-                    // Test if GCC is actually accessible
-                    try {
-                        ProcessBuilder testPb = new ProcessBuilder(usedCompiler, "--version");
-                        Process testProcess = testPb.start();
-                        int testExitCode = testProcess.waitFor();
-                        if (testExitCode == 0) {
-                            log.info("GCC version check successful");
-                        } else {
-                            log.error("GCC version check failed with exit code: {}", testExitCode);
-                        }
-                    } catch (Exception e) {
-                        log.error("Cannot execute GCC for version check: {}", e.getMessage());
-                    }
-                } catch (Exception e) {
-                    log.warn("Could not read source file for debugging", e);
-                }
-                
-                log.error("C compilation failed: {}", errorMessage);
+            boolean executed = execProcess.waitFor(EXECUTION_TIMEOUT, TimeUnit.SECONDS);
+            if (!executed) {
+                execProcess.destroyForcibly();
                 response.setSuccess(false);
-                response.setError("Lỗi biên dịch C: " + errorMessage);
-                return response;
-            }
-
-            // Run
-            ProcessBuilder runBuilder = new ProcessBuilder(executable.toString());
-            runBuilder.directory(workDir.toFile());
-            Process runProcess = runBuilder.start();
-            
-            String output = readOutputStream(runProcess, EXECUTION_TIMEOUT);
-            
-            // Check if execution completed successfully
-            int runExitCode = runProcess.waitFor();
-            if (runExitCode != 0) {
-                String errorOutput = readErrorStream(runProcess);
-                response.setSuccess(false);
-                response.setError("Lỗi thực thi C (Exit Code: " + runExitCode + "): " + errorOutput);
+                response.setError("Execution timeout");
                 return response;
             }
             
+            if (execProcess.exitValue() != 0) {
+                String error = readProcessOutput(execProcess.getErrorStream());
+                response.setSuccess(false);
+                response.setError("Runtime error: " + error);
+                return response;
+            }
+            
+            String output = readProcessOutput(execProcess.getInputStream());
             response.setSuccess(true);
             response.setOutput(output);
             
         } catch (Exception e) {
             response.setSuccess(false);
-            response.setError("Lỗi thực thi C: " + e.getMessage());
+            response.setError("Error executing C code: " + e.getMessage());
         } finally {
             deleteDirectory(workDir);
         }
@@ -584,759 +765,329 @@ public class CodeExecutionService {
         return response;
     }
 
-    private String executeCodeWithInput(String code, String language, String input, Path workDir, Integer timeLimit) throws Exception {
-        String uniqueFileName = UUID.randomUUID().toString();
+    private String executeCodeWithInputLocal(String code, String language, String input, 
+                                            Path workDir, long timeoutMs) throws Exception {
+        Process process = null;
         
-        switch (language.toLowerCase()) {
-            case "java":
-                return executeJavaWithInput(code, input, workDir, uniqueFileName, timeLimit);
-            case "python":
-                return executePythonWithInput(code, input, workDir, uniqueFileName, timeLimit);
-            case "cpp":
-            case "c++":
-                return executeCppWithInput(code, input, workDir, uniqueFileName, timeLimit);
-            case "c":
-                return executeCWithInput(code, input, workDir, uniqueFileName, timeLimit);
-            default:
-                throw new UnsupportedOperationException("Ngôn ngữ không hỗ trợ: " + language);
-        }
-    }
-
-    private String executeJavaWithInput(String code, String input, Path workDir, String fileName, Integer timeLimit) throws Exception {
-        // Extract class name from code
-        String className = extractJavaClassName(code);
-        if (className == null) {
-            className = "Solution"; // Default fallback
-        }
-        
-        Path javaFile = workDir.resolve(className + ".java");
-        Files.write(javaFile, code.getBytes());
-
-        // Compile
-        ProcessBuilder compileBuilder = new ProcessBuilder("javac", javaFile.toString());
-        compileBuilder.directory(workDir.toFile());
-        Process compileProcess = compileBuilder.start();
-        
-        if (compileProcess.waitFor() != 0) {
-            throw new RuntimeException("Compilation error: " + readErrorStream(compileProcess));
-        }
-
-        // Run with input
-        ProcessBuilder runBuilder = new ProcessBuilder("java", "-cp", workDir.toString(), className);
-        runBuilder.directory(workDir.toFile());
-        Process runProcess = runBuilder.start();
-        
-        // Send input
-        if (input != null && !input.isEmpty()) {
-            try (OutputStreamWriter writer = new OutputStreamWriter(runProcess.getOutputStream())) {
-                writer.write(input);
-                writer.flush();
-            }
-        } else {
-            // Close the output stream even if no input
-            runProcess.getOutputStream().close();
-        }
-        
-        return readOutputStream(runProcess, timeLimit != null ? timeLimit / 1000 : EXECUTION_TIMEOUT);
-    }
-
-    private String executePythonWithInput(String code, String input, Path workDir, String fileName, Integer timeLimit) throws Exception {
-        Path pythonFile = workDir.resolve(fileName + ".py");
-        Files.write(pythonFile, code.getBytes());
-
-        // Try different Python commands based on OS
-        String[] pythonCommands = getPythonCommands();
-        ProcessBuilder runBuilder = null;
-        
-        for (String pythonCmd : pythonCommands) {
-            try {
-                runBuilder = new ProcessBuilder(pythonCmd, pythonFile.toString());
-                runBuilder.directory(workDir.toFile());
-                break;
-            } catch (Exception e) {
-                // Try next command
-                continue;
-            }
-        }
-        
-        if (runBuilder == null) {
-            throw new RuntimeException("Python không được cài đặt hoặc không tìm thấy trong PATH");
-        }
-        
-        Process runProcess = runBuilder.start();
-        
-        // Send input
-        if (input != null && !input.isEmpty()) {
-            try (OutputStreamWriter writer = new OutputStreamWriter(runProcess.getOutputStream())) {
-                writer.write(input);
-                writer.flush();
-            }
-        } else {
-            // Close the output stream even if no input
-            runProcess.getOutputStream().close();
-        }
-        
-        String output = readOutputStream(runProcess, timeLimit != null ? timeLimit / 1000 : EXECUTION_TIMEOUT);
-        
-        // Check exit code
-        int exitCode = runProcess.waitFor();
-        if (exitCode != 0) {
-            String errorOutput = readErrorStream(runProcess);
-            throw new RuntimeException("Python execution failed (Exit Code: " + exitCode + "): " + errorOutput);
-        }
-        
-        return output;
-    }
-
-    private String executeCppWithInput(String code, String input, Path workDir, String fileName, Integer timeLimit) throws Exception {
-        Path cppFile = workDir.resolve(fileName + ".cpp");
-        Files.write(cppFile, code.getBytes());
-        
-        Path executable = workDir.resolve(fileName + ".exe");
-
-        // Compile
-        ProcessBuilder compileBuilder = new ProcessBuilder("g++", "-o", executable.toString(), cppFile.toString());
-        compileBuilder.directory(workDir.toFile());
-        Process compileProcess = compileBuilder.start();
-        
-        if (compileProcess.waitFor() != 0) {
-            throw new RuntimeException("Compilation error: " + readErrorStream(compileProcess));
-        }
-
-        ProcessBuilder runBuilder = new ProcessBuilder(executable.toString());
-        runBuilder.directory(workDir.toFile());
-        Process runProcess = runBuilder.start();
-        
-        // Send input
-        if (input != null && !input.isEmpty()) {
-            try (OutputStreamWriter writer = new OutputStreamWriter(runProcess.getOutputStream())) {
-                writer.write(input);
-                writer.flush();
-            }
-        } else {
-            // Close the output stream even if no input
-            runProcess.getOutputStream().close();
-        }
-        
-        return readOutputStream(runProcess, timeLimit != null ? timeLimit / 1000 : EXECUTION_TIMEOUT);
-    }
-
-    private String executeCWithInput(String code, String input, Path workDir, String fileName, Integer timeLimit) throws Exception {
-        // Write C file with UTF-8 encoding
-        Path cFile = workDir.resolve(fileName + ".c");
-        Files.write(cFile, code.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        
-        Path executable = workDir.resolve(fileName + ".exe");
-
-        // Get C compiler command based on OS
-        String[] compilerCommands = getCCompilerCommands();
-        ProcessBuilder compileBuilder = null;
-        String usedCompiler = null;
-        
-        for (String compilerCmd : compilerCommands) {
-            try {
-                compileBuilder = createGccCompileCommand(compilerCmd, executable.toString(), cFile.toString(), workDir);
-                compileBuilder.directory(workDir.toFile());
-                usedCompiler = compilerCmd;
-                log.debug("Trying C compiler: {}", compilerCmd);
-                break;
-            } catch (Exception e) {
-                log.debug("C compiler {} not available: {}", compilerCmd, e.getMessage());
-                // Try next compiler
-                continue;
-            }
-        }
-        
-        if (compileBuilder == null) {
-            throw new RuntimeException("GCC compiler không được cài đặt hoặc không tìm thấy trong PATH");
-        }
-        
-        log.info("Using C compiler: {}", usedCompiler);
-        
-        Process compileProcess = compileBuilder.start();
-        
-        // Read streams immediately to prevent blocking
-        StringBuilder compileStdout = new StringBuilder();
-        StringBuilder compileStderr = new StringBuilder();
-        
-        // Start threads to read stdout and stderr concurrently
-        Thread stdoutReader = new Thread(() -> {
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(compileProcess.getInputStream()))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    compileStdout.append(line).append("\n");
-                }
-            } catch (IOException e) {
-                log.warn("Error reading compilation stdout", e);
-            }
-        });
-        
-        Thread stderrReader = new Thread(() -> {
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(compileProcess.getErrorStream()))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    compileStderr.append(line).append("\n");
-                }
-            } catch (IOException e) {
-                log.warn("Error reading compilation stderr", e);
-            }
-        });
-        
-        stdoutReader.start();
-        stderrReader.start();
-        
-        int compileExitCode = compileProcess.waitFor();
-        
-        // Wait for stream readers to complete
-        try {
-            stdoutReader.join(5000); // 5 second timeout
-            stderrReader.join(5000);
-        } catch (InterruptedException e) {
-            log.warn("Interrupted while waiting for stream readers");
-        }
-        
-        if (compileExitCode != 0) {
-            String stdoutStr = compileStdout.toString().trim();
-            String stderrStr = compileStderr.toString().trim();
-            
-            String errorMessage = "Compilation failed (Exit Code: " + compileExitCode + ")";
-            if (!stderrStr.isEmpty()) {
-                errorMessage += "\nCompilation Error: " + stderrStr;
-            }
-            if (!stdoutStr.isEmpty()) {
-                errorMessage += "\nCompilation Output: " + stdoutStr;
-            }
-            
-            // Also log the actual source code being compiled for debugging
-            try {
-                String sourceCode = new String(Files.readAllBytes(cFile), java.nio.charset.StandardCharsets.UTF_8);
-                log.error("Source code that failed to compile:\n{}", sourceCode);
-                log.error("Compiler used: {}", usedCompiler);
-                log.error("Working directory: {}", workDir.toAbsolutePath());
-                log.error("GCC executable path: {}", usedCompiler);
-                
-                // Test if GCC is actually accessible
-                try {
-                    ProcessBuilder testPb = new ProcessBuilder(usedCompiler, "--version");
-                    Process testProcess = testPb.start();
-                    int testExitCode = testProcess.waitFor();
-                    if (testExitCode == 0) {
-                        log.info("GCC version check successful in executeCWithInput");
-                    } else {
-                        log.error("GCC version check failed in executeCWithInput with exit code: {}", testExitCode);
-                    }
-                } catch (Exception e) {
-                    log.error("Cannot execute GCC for version check in executeCWithInput: {}", e.getMessage());
-                }
-            } catch (Exception e) {
-                log.warn("Could not read source file for debugging", e);
-            }
-            
-            log.error("C compilation failed: {}", errorMessage);
-            throw new RuntimeException(errorMessage);
-        }
-
-        ProcessBuilder runBuilder = new ProcessBuilder(executable.toString());
-        runBuilder.directory(workDir.toFile());
-        Process runProcess = runBuilder.start();
-        
-        // Send input
-        if (input != null && !input.isEmpty()) {
-            try (OutputStreamWriter writer = new OutputStreamWriter(runProcess.getOutputStream())) {
-                writer.write(input);
-                writer.flush();
-            }
-        } else {
-            // Close the output stream even if no input
-            runProcess.getOutputStream().close();
-        }
-        
-        String output = readOutputStream(runProcess, timeLimit != null ? timeLimit / 1000 : EXECUTION_TIMEOUT);
-        
-        // Check exit code
-        int runExitCode = runProcess.waitFor();
-        if (runExitCode != 0) {
-            String errorOutput = readErrorStream(runProcess);
-            throw new RuntimeException("C execution failed (Exit Code: " + runExitCode + "): " + errorOutput);
-        }
-        
-        return output;
-    }
-
-    private String readOutputStream(Process process, int timeoutSeconds) throws Exception {
-        StringBuilder output = new StringBuilder();
-        
-        Future<String> future = Executors.newSingleThreadExecutor().submit(() -> {
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    output.append(line).append("\n");
-                }
-                process.waitFor(); // Wait for process to complete
-                return output.toString();
-            } catch (IOException | InterruptedException e) {
-                throw new RuntimeException(e);
-            }
-        });
-        
-        try {
-            String result = future.get(timeoutSeconds, TimeUnit.SECONDS);
-            return result != null ? result.trim() : "";
-        } catch (TimeoutException e) {
-            process.destroyForcibly();
-            throw new TimeoutException("Vượt quá thời gian thực thi cho phép");
-        }
-    }
-
-    private String readErrorStream(Process process) {
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getErrorStream()))) {
-            StringBuilder error = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                error.append(line).append("\n");
-            }
-            return error.toString();
-        } catch (IOException e) {
-            return "Không thể đọc error stream";
-        }
-    }
-
-    private void deleteDirectory(Path path) {
-        try {
-            if (Files.exists(path)) {
-                Files.walk(path)
-                    .sorted((a, b) -> b.compareTo(a))
-                    .forEach(p -> {
-                        try {
-                            Files.delete(p);
-                        } catch (IOException e) {
-                            log.warn("Could not delete file: " + p, e);
-                        }
-                    });
-            }
-        } catch (Exception e) {
-            log.warn("Could not delete directory: " + path, e);
-        }
-    }
-
-    /**
-     * Extract the main class name from Java source code
-     */
-    private String extractJavaClassName(String code) {
-        try {
-            // Look for public class first
-            String publicClassPattern = "public\\s+class\\s+(\\w+)";
-            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(publicClassPattern);
-            java.util.regex.Matcher matcher = pattern.matcher(code);
-            
-            if (matcher.find()) {
-                return matcher.group(1);
-            }
-            
-            // If no public class found, look for any class with main method
-            String classPattern = "class\\s+(\\w+)\\s*\\{[^}]*public\\s+static\\s+void\\s+main";
-            pattern = java.util.regex.Pattern.compile(classPattern, java.util.regex.Pattern.DOTALL);
-            matcher = pattern.matcher(code);
-            
-            if (matcher.find()) {
-                return matcher.group(1);
-            }
-            
-            // If still not found, just look for any class
-            String anyClassPattern = "class\\s+(\\w+)";
-            pattern = java.util.regex.Pattern.compile(anyClassPattern);
-            matcher = pattern.matcher(code);
-            
-            if (matcher.find()) {
-                return matcher.group(1);
-            }
-            
-        } catch (Exception e) {
-            log.warn("Error extracting class name from Java code", e);
-        }
-        
-        return null; // Return null if no class found
-    }
-    
-    /**
-     * Get Python command candidates based on operating system
-     */
-    private String[] getPythonCommands() {
-        String os = System.getProperty("os.name").toLowerCase();
-        if (os.contains("win")) {
-            // Windows - try py launcher first, then python3, then python
-            return new String[]{"py", "python3", "python"};
-        } else {
-            // Linux/Unix/Mac - try python3 first, then python
-            return new String[]{"python3", "python"};
-        }
-    }
-    
-    /**
-     * Get C compiler command candidates based on operating system
-     */
-    private String[] getCCompilerCommands() {
-        String os = System.getProperty("os.name").toLowerCase();
-        if (os.contains("win")) {
-            // Windows - try MSYS2 GCC first, then standard GCC locations
-            return new String[]{
-                "C:\\msys64\\ucrt64\\bin\\gcc.exe",
-                "C:\\msys64\\mingw64\\bin\\gcc.exe",
-                "gcc"
-            };
-        } else {
-            // Linux/Unix/Mac - try gcc
-            return new String[]{"gcc"};
-        }
-    }
-    
-    /**
-     * Create GCC compilation command with proper encoding and flags
-     */
-    private ProcessBuilder createGccCompileCommand(String gccPath, String outputPath, String sourcePath, Path workDir) {
-        ProcessBuilder pb;
-        String os = System.getProperty("os.name").toLowerCase();
-        if (os.contains("win")) {
-            // Windows - add UTF-8 support, math library and proper flags
-            pb = new ProcessBuilder(gccPath, "-finput-charset=UTF-8", "-fexec-charset=UTF-8", "-o", outputPath, sourcePath, "-lm");
-            
-            // Add MSYS2 directories to PATH for DLL dependencies
-            java.util.Map<String, String> env = pb.environment();
-            String currentPath = env.get("PATH");
-            if (currentPath == null) currentPath = "";
-            
-            // Add MSYS2 bin directories to PATH - ensure proper order
-            String msys2Paths = "C:\\msys64\\ucrt64\\bin;C:\\msys64\\mingw64\\bin;C:\\msys64\\usr\\bin";
-            if (!currentPath.isEmpty()) {
-                env.put("PATH", msys2Paths + ";" + currentPath);
-            } else {
-                env.put("PATH", msys2Paths);
-            }
-            
-            // Set additional environment variables for GCC on Windows
-            env.put("MSYSTEM", "UCRT64");
-            env.put("CC", "gcc");
-            env.put("CXX", "g++");
-            
-            log.debug("Set environment PATH for GCC: {}", env.get("PATH"));
-        } else {
-            // Linux/Unix/Mac - standard compilation with math library
-            pb = new ProcessBuilder(gccPath, "-o", outputPath, sourcePath, "-lm");
-        }
-        return pb;
-    }
-    
-    /**
-     * Check if a language requires compilation
-     */
-    private boolean isCompiledLanguage(String language) {
-        return switch (language.toLowerCase()) {
-            case "java", "c", "cpp", "c++" -> true;
-            default -> false;
-        };
-    }
-    
-    /**
-     * Pre-compile C code
-     */
-    private void preCompileC(String code, Path workDir) throws CompilationException {
-        log.info("Pre-compiling C code in directory: {}", workDir);
-        try {
-            // Write C file with UTF-8 encoding
-            Path cFile = workDir.resolve("solution.c");
-            Files.write(cFile, code.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            log.debug("Written C source file: {}", cFile);
-            
-            Path executable = workDir.resolve("solution.exe");
-
-            // Get C compiler command based on OS
-            String[] compilerCommands = getCCompilerCommands();
-            log.debug("Available C compiler commands: {}", Arrays.toString(compilerCommands));
-            
-            ProcessBuilder compileBuilder = null;
-            String usedCompiler = null;
-            
-            for (String compilerCmd : compilerCommands) {
-                try {
-                    compileBuilder = createGccCompileCommand(compilerCmd, executable.toString(), cFile.toString(), workDir);
-                    compileBuilder.directory(workDir.toFile());
-                    usedCompiler = compilerCmd;
-                    log.debug("Successfully created compile command using: {}", compilerCmd);
-                    break;
-                } catch (Exception e) {
-                    log.debug("C compiler {} not available: {}", compilerCmd, e.getMessage());
-                    continue;
-                }
-            }
-            
-            if (compileBuilder == null) {
-                throw new CompilationException("GCC compiler không được cài đặt hoặc không tìm thấy trong PATH");
-            }
-            
-            log.info("Using C compiler for pre-compilation: {}", usedCompiler);
-            
-            Process compileProcess = compileBuilder.start();
-            
-            // Read streams immediately to prevent blocking
-            StringBuilder compileStdout = new StringBuilder();
-            StringBuilder compileStderr = new StringBuilder();
-            
-            // Start threads to read stdout and stderr concurrently
-            Thread stdoutReader = new Thread(() -> {
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(compileProcess.getInputStream()))) {
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        compileStdout.append(line).append("\n");
-                    }
-                } catch (IOException e) {
-                    log.warn("Error reading compilation stdout", e);
-                }
-            });
-            
-            Thread stderrReader = new Thread(() -> {
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(compileProcess.getErrorStream()))) {
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        compileStderr.append(line).append("\n");
-                    }
-                } catch (IOException e) {
-                    log.warn("Error reading compilation stderr", e);
-                }
-            });
-            
-            stdoutReader.start();
-            stderrReader.start();
-            
-            int compileExitCode = compileProcess.waitFor();
-            
-            // Wait for stream readers to complete
-            try {
-                stdoutReader.join(5000); // 5 second timeout
-                stderrReader.join(5000);
-            } catch (InterruptedException e) {
-                log.warn("Interrupted while waiting for stream readers");
-            }
-            
-            if (compileExitCode != 0) {
-                String stdoutStr = compileStdout.toString().trim();
-                String stderrStr = compileStderr.toString().trim();
-                
-                String errorMessage = "C compilation failed (Exit Code: " + compileExitCode + ")";
-                if (!stderrStr.isEmpty()) {
-                    errorMessage += "\nCompilation Error: " + stderrStr;
-                }
-                if (!stdoutStr.isEmpty()) {
-                    errorMessage += "\nCompilation Output: " + stdoutStr;
-                }
-                
-                // Log the actual source code being compiled for debugging
-                try {
-                    String sourceCode = new String(Files.readAllBytes(cFile), java.nio.charset.StandardCharsets.UTF_8);
-                    log.error("Source code that failed to compile:\n{}", sourceCode);
-                } catch (Exception e) {
-                    log.warn("Could not read source file for debugging", e);
-                }
-                
-                log.error("C pre-compilation failed: {}", errorMessage);
-                throw new CompilationException("C compilation failed with all available compilers: " + errorMessage);
-            }
-            
-            log.info("C pre-compilation completed successfully using: {}", usedCompiler);
-            
-        } catch (CompilationException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("Error during C pre-compilation: {}", e.getMessage(), e);
-            throw new CompilationException("Error during C pre-compilation: " + e.getMessage(), e);
-        }
-    }
-    
-    /**
-     * Pre-compile code for compiled languages
-     */
-    private void preCompileCode(String code, String language, Path workDir) throws CompilationException {
-        log.info("Starting pre-compilation for language: {} in directory: {}", language, workDir);
         try {
             switch (language.toLowerCase()) {
                 case "java":
-                    log.debug("Pre-compiling Java code");
-                    preCompileJava(code, workDir);
+                    // Compile and run Java
+                    Path javaFile = workDir.resolve("Main.java");
+                    Files.write(javaFile, code.getBytes());
+                    
+                    Process compileProcess = new ProcessBuilder("javac", javaFile.toString())
+                            .directory(workDir.toFile()).start();
+                    compileProcess.waitFor(COMPILATION_TIMEOUT, TimeUnit.SECONDS);
+                    
+                    if (compileProcess.exitValue() != 0) {
+                        throw new RuntimeException("Compilation failed");
+                    }
+                    
+                    process = new ProcessBuilder("java", "-cp", workDir.toString(), "Main")
+                            .directory(workDir.toFile()).start();
                     break;
+                    
+                case "python":
+                    Path pythonFile = workDir.resolve("main.py");
+                    Files.write(pythonFile, code.getBytes());
+                    process = new ProcessBuilder("python", pythonFile.toString())
+                            .directory(workDir.toFile()).start();
+                    break;
+                    
+                case "cpp":
+                case "c++":
+                    Path cppFile = workDir.resolve("main.cpp");
+                    Files.write(cppFile, code.getBytes());
+                    
+                    Path cppExec = workDir.resolve("main");
+                    Process cppCompile = new ProcessBuilder("g++", "-o", cppExec.toString(), 
+                            cppFile.toString(), "-lm", "-std=c++17")
+                            .directory(workDir.toFile()).start();
+                    cppCompile.waitFor(COMPILATION_TIMEOUT, TimeUnit.SECONDS);
+                    
+                    if (cppCompile.exitValue() != 0) {
+                        throw new RuntimeException("Compilation failed");
+                    }
+                    
+                    process = new ProcessBuilder(cppExec.toString())
+                            .directory(workDir.toFile()).start();
+                    break;
+                    
                 case "c":
-                    log.debug("Pre-compiling C code");
-                    preCompileC(code, workDir);
+                    Path cFile = workDir.resolve("main.c");
+                    Files.write(cFile, code.getBytes());
+                    
+                    Path cExec = workDir.resolve("main");
+                    Process cCompile = new ProcessBuilder("gcc", "-o", cExec.toString(), 
+                            cFile.toString(), "-lm", "-std=c99")
+                            .directory(workDir.toFile()).start();
+                    cCompile.waitFor(COMPILATION_TIMEOUT, TimeUnit.SECONDS);
+                    
+                    if (cCompile.exitValue() != 0) {
+                        throw new RuntimeException("Compilation failed");
+                    }
+                    
+                    process = new ProcessBuilder(cExec.toString())
+                            .directory(workDir.toFile()).start();
                     break;
-                case "cpp", "c++":
-                    log.debug("Pre-compiling C++ code");
-                    preCompileCpp(code, workDir);
-                    break;
+                    
                 default:
-                    log.debug("No pre-compilation needed for language: {}", language);
-                    break;
+                    throw new RuntimeException("Unsupported language: " + language);
             }
-            log.info("Pre-compilation completed successfully for language: {}", language);
-        } catch (CompilationException e) {
-            log.error("Pre-compilation failed for language {}: {}", language, e.getMessage(), e);
-            throw e;
+            
+            // Send input to process
+            if (input != null && !input.trim().isEmpty()) {
+                try (PrintWriter writer = new PrintWriter(process.getOutputStream())) {
+                    writer.println(input);
+                    writer.flush();
+                }
+            }
+            
+            // Wait for completion with timeout
+            boolean finished = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                throw new RuntimeException("Execution timeout");
+            }
+            
+            if (process.exitValue() != 0) {
+                String error = readProcessOutput(process.getErrorStream());
+                throw new RuntimeException("Runtime error: " + error);
+            }
+            
+            return readProcessOutput(process.getInputStream());
+            
+        } finally {
+            if (process != null && process.isAlive()) {
+                process.destroyForcibly();
+            }
+        }
+    }
+
+    private TestResultResponse executeTestCaseLocal(String code, String language, TestCase testCase) {
+        long startTime = System.currentTimeMillis();
+        
+        TestResultResponse testResult = new TestResultResponse();
+        testResult.setTestCaseId(testCase.getId());
+        testResult.setInput(testCase.getInput());
+        testResult.setExpectedOutput(testCase.getExpectedOutput());
+        
+        try {
+            String uniqueId = UUID.randomUUID().toString();
+            Path workDir = Paths.get(TEMP_DIR, "cscore_test", uniqueId);
+            Files.createDirectories(workDir);
+            
+            String actualOutput = executeCodeWithInputLocal(code, language, testCase.getInput(), 
+                                                           workDir, EXECUTION_TIMEOUT * 1000);
+            
+            long executionTime = System.currentTimeMillis() - startTime;
+            
+            testResult.setActualOutput(actualOutput);
+            testResult.setExecutionTime(executionTime);
+            
+            boolean passed = compareOutputs(testCase.getExpectedOutput(), actualOutput);
+            testResult.setPassed(passed);
+            
+            if (!passed) {
+                testResult.setErrorMessage("Kết quả không khớp với expected output");
+            }
+            
+            // Cleanup
+            deleteDirectory(workDir);
+            
         } catch (Exception e) {
-            log.error("Unexpected error during pre-compilation for language {}: {}", language, e.getMessage(), e);
-            throw new CompilationException("Pre-compilation failed: " + e.getMessage(), e);
+            long executionTime = System.currentTimeMillis() - startTime;
+            testResult.setExecutionTime(executionTime);
+            testResult.setPassed(false);
+            testResult.setErrorMessage("Lỗi thực thi: " + e.getMessage());
+            testResult.setActualOutput("");
+        }
+        
+        return testResult;
+    }
+
+    // ========== UTILITY METHODS ==========
+    
+    private boolean isMathLibraryError(String error) {
+        return error.contains("undefined reference to `sqrt'") ||
+               error.contains("undefined reference to `pow'") ||
+               error.contains("undefined reference to `sin'") ||
+               error.contains("undefined reference to `cos'") ||
+               error.contains("undefined reference to `tan'") ||
+               error.contains("math.h");
+    }
+
+    private String generateGradingMessage(CodeExecutionResponse response) {
+        if (response.isSuccess()) {
+            int passedTests = response.getPassedTests();
+            int totalTests = response.getTotalTests();
+            return String.format(
+                "Chấm điểm tự động hoàn thành: Code của bạn được thực thi với %d test case(s) từ giảng viên. " +
+                "Kết quả: %d/%d test case(s) đạt yêu cầu. " +
+                "Điểm số được tính dựa trên output thực tế so với expected output và trọng số của từng test case. " +
+                "Không có so sánh trực tiếp code với đáp án của giảng viên.",
+                totalTests, passedTests, totalTests
+            );
+        } else {
+            return "Chấm điểm tự động: Code có lỗi trong quá trình biên dịch hoặc thực thi. " +
+                   "Hệ thống không thể chạy test cases. Vui lòng kiểm tra lại code và thử lại.";
         }
     }
-    
-    /**
-     * Pre-compile Java code
-     */
-    private void preCompileJava(String code, Path workDir) throws Exception {
-        String className = extractJavaClassName(code);
-        if (className == null) {
-            throw new CompilationException("Could not determine Java class name");
-        }
+
+    private boolean compareOutputs(String expected, String actual) {
+        if (expected == null && actual == null) return true;
+        if (expected == null || actual == null) return false;
         
-        Path javaFile = workDir.resolve(className + ".java");
-        Files.write(javaFile, code.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        // Normalize whitespace and compare
+        String normalizedExpected = expected.trim().replaceAll("\\s+", " ");
+        String normalizedActual = actual.trim().replaceAll("\\s+", " ");
         
-        ProcessBuilder compileBuilder = new ProcessBuilder("javac", "-encoding", "UTF-8", javaFile.toString());
-        compileBuilder.directory(workDir.toFile());
-        Process compileProcess = compileBuilder.start();
-        
-        boolean finished = compileProcess.waitFor(COMPILATION_TIMEOUT, TimeUnit.SECONDS);
-        if (!finished) {
-            compileProcess.destroyForcibly();
-            throw new CompilationException("Java compilation timeout");
-        }
-        
-        if (compileProcess.exitValue() != 0) {
-            String errorMessage = readErrorStream(compileProcess);
-            throw new CompilationException("Java compilation failed: " + errorMessage);
-        }
+        return normalizedExpected.equals(normalizedActual);
     }
-    
-    /**
-     * Pre-compile C++ code
-     */
-    private void preCompileCpp(String code, Path workDir) throws Exception {
-        Path cppFile = workDir.resolve("solution.cpp");
-        Files.write(cppFile, code.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        
-        Path executable = workDir.resolve("solution.exe");
-        
-        ProcessBuilder compileBuilder = new ProcessBuilder("g++", "-std=c++17", "-O2", "-o", executable.toString(), cppFile.toString());
-        compileBuilder.directory(workDir.toFile());
-        Process compileProcess = compileBuilder.start();
-        
-        boolean finished = compileProcess.waitFor(COMPILATION_TIMEOUT, TimeUnit.SECONDS);
-        if (!finished) {
-            compileProcess.destroyForcibly();
-            throw new CompilationException("C++ compilation timeout");
-        }
-        
-        if (compileProcess.exitValue() != 0) {
-            String errorMessage = readErrorStream(compileProcess);
-            throw new CompilationException("C++ compilation failed: " + errorMessage);
-        }
-    }
-    
-    /**
-     * Create a failed test result
-     */
+
     private TestResultResponse createFailedTestResult(TestCase testCase, String errorMessage) {
-        TestResultResponse result = new TestResultResponse();
-        result.setTestCaseId(testCase.getId());
-        result.setInput(testCase.getInput());
-        result.setExpectedOutput(testCase.getExpectedOutput());
-        result.setActualOutput("");
-        result.setPassed(false);
-        result.setExecutionTime(0L);
-        result.setMemoryUsed(0L);
-        result.setErrorMessage(truncateOutput(errorMessage));
-        result.setWeight(testCase.getWeight());
-        result.setHidden(testCase.getIsHidden());
+        TestResultResponse testResult = new TestResultResponse();
+        testResult.setTestCaseId(testCase.getId());
+        testResult.setInput(testCase.getInput());
+        testResult.setExpectedOutput(testCase.getExpectedOutput());
+        testResult.setActualOutput("");
+        testResult.setPassed(false);
+        testResult.setErrorMessage(errorMessage);
+        testResult.setExecutionTime(0L);
+        return testResult;
+    }
+
+    private void saveTestResult(Submission submission, TestCase testCase, TestResultResponse testResult) {
+        try {
+            TestResult entity = new TestResult();
+            entity.setSubmission(submission);
+            entity.setTestCase(testCase);
+            entity.setPassed(testResult.isPassed());
+            entity.setActualOutput(testResult.getActualOutput());
+            entity.setErrorMessage(testResult.getErrorMessage());
+            entity.setExecutionTime(testResult.getExecutionTime());
+            
+            testResultRepository.save(entity);
+        } catch (Exception e) {
+            log.error("Error saving test result", e);
+        }
+    }
+
+    private String readProcessOutput(InputStream inputStream) throws IOException {
+        StringBuilder output = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                output.append(line).append("\n");
+                if (output.length() > MAX_OUTPUT_LENGTH) {
+                    output.append("... (output truncated)");
+                    break;
+                }
+            }
+        }
+        return output.toString().trim();
+    }
+
+    private void deleteDirectory(Path directory) {
+        try {
+            if (Files.exists(directory)) {
+                Files.walk(directory)
+                        .sorted(Comparator.reverseOrder())
+                        .map(Path::toFile)
+                        .forEach(File::delete);
+            }
+        } catch (IOException e) {
+            log.warn("Failed to delete directory: {}", directory, e);
+        }
+    }
+
+    // ========== ENUM ==========
+    
+    private enum ExecutionStrategy {
+        LOCAL, JOBE, HYBRID
+    }
+    
+    // ========== ADDITIONAL METHODS FOR CONTROLLER COMPATIBILITY ==========
+    
+    /**
+     * Get system requirements
+     */
+    public Map<String, Object> getSystemRequirements() {
+        Map<String, Object> requirements = new HashMap<>();
+        requirements.put("javaVersion", System.getProperty("java.version"));
+        requirements.put("osName", System.getProperty("os.name"));
+        requirements.put("osVersion", System.getProperty("os.version"));
+        requirements.put("architecture", System.getProperty("os.arch"));
+        requirements.put("availableProcessors", Runtime.getRuntime().availableProcessors());
+        requirements.put("maxMemory", Runtime.getRuntime().maxMemory());
+        requirements.put("freeMemory", Runtime.getRuntime().freeMemory());
         
-        return result;
+        return requirements;
     }
     
     /**
-     * Truncate output if it's too long
+     * Get supported languages
      */
-    private String truncateOutput(String output) {
-        if (output == null) return null;
-        if (output.length() <= MAX_OUTPUT_LENGTH) return output;
-        
-        return output.substring(0, MAX_OUTPUT_LENGTH) + "\n... (output truncated)";
+    public Set<ProgrammingLanguage> getSupportedLanguages() {
+        return Set.of(
+            ProgrammingLanguage.JAVA,
+            ProgrammingLanguage.PYTHON,
+            ProgrammingLanguage.C,
+            ProgrammingLanguage.CPP
+        );
     }
     
     /**
-     * Combine student function code with teacher's test code
+     * Check if language is supported
      */
-    private String combineStudentCodeWithTestCode(String studentCode, String testCode, String language) {
-        log.debug("Combining student code with test code for language: {}", language);
+    public boolean isLanguageSupported(ProgrammingLanguage language) {
+        return getSupportedLanguages().contains(language);
+    }
+    
+    /**
+     * Get compiler information for a language
+     */
+    public Map<String, Object> getCompilerInfo(ProgrammingLanguage language) {
+        Map<String, Object> info = new HashMap<>();
         
-        switch (language.toLowerCase()) {
-            case "c":
-                // Check if testCode already has main function
-                if (testCode.contains("int main") || testCode.contains("void main")) {
-                    // TestCode has complete main function, just combine
-                    return "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n\n" +
-                           studentCode + "\n\n" + testCode;
-                } else {
-                    // TestCode is just code snippet, wrap it in main function
-                    return "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n\n" +
-                           studentCode + "\n\n" +
-                           "int main() {\n" +
-                           "    " + testCode.replace("\n", "\n    ") + "\n" +
-                           "    return 0;\n" +
-                           "}";
-                }
-                       
-            case "cpp":
-            case "c++":
-                // Check if testCode already has main function
-                if (testCode.contains("int main") || testCode.contains("void main")) {
-                    return "#include <iostream>\n#include <string>\n#include <cstring>\n#include <cmath>\n#include <vector>\n#include <algorithm>\nusing namespace std;\n\n" +
-                           studentCode + "\n\n" + testCode;
-                } else {
-                    return "#include <iostream>\n#include <string>\n#include <cstring>\n#include <cmath>\n#include <vector>\n#include <algorithm>\nusing namespace std;\n\n" +
-                           studentCode + "\n\n" +
-                           "int main() {\n" +
-                           "    " + testCode.replace("\n", "\n    ") + "\n" +
-                           "    return 0;\n" +
-                           "}";
-                }
-                       
-            case "java":
-                // For Java, wrap everything in a class if not already wrapped
-                if (!testCode.contains("class") && !testCode.contains("public static void main")) {
-                    return "import java.util.*;\n\npublic class Solution {\n" +
-                           "    " + studentCode.replace("\n", "\n    ") + "\n\n" +
-                           "    public static void main(String[] args) {\n" +
-                           "        " + testCode.replace("\n", "\n        ") + "\n" +
-                           "    }\n" +
-                           "}";
-                } else {
-                    // TestCode already contains class structure
-                    return studentCode + "\n\n" + testCode;
-                }
-                
-            case "python":
-                return studentCode + "\n\n" + testCode;
-                
+        switch (language) {
+            case JAVA:
+                info.put("compiler", "javac");
+                info.put("version", System.getProperty("java.version"));
+                info.put("runtime", "java");
+                break;
+            case PYTHON:
+                info.put("interpreter", "python3");
+                info.put("version", "3.x");
+                break;
+            case C:
+                info.put("compiler", "gcc");
+                info.put("version", "latest");
+                break;
+            case CPP:
+                info.put("compiler", "g++");
+                info.put("version", "latest");
+                break;
             default:
-                log.warn("Unknown language for code combination: {}", language);
-                return studentCode + "\n\n" + testCode;
+                info.put("error", "Unsupported language");
         }
+        
+        return info;
     }
     
     /**
-     * Custom exception for compilation errors
+     * Get execution information
      */
-    public static class CompilationException extends Exception {
-        public CompilationException(String message) {
-            super(message);
-        }
+    public Map<String, Object> getExecutionInfo() {
+        Map<String, Object> info = new HashMap<>();
+        info.put("strategy", currentStrategy.toString());
+        info.put("supportedLanguages", getSupportedLanguages());
+        info.put("maxTimeLimit", 30); // seconds
+        info.put("maxMemoryLimit", "256MB");
+        info.put("jobeAvailable", jobeAvailable);
+        info.put("localExecutionEnabled", true);
         
-        public CompilationException(String message, Throwable cause) {
-            super(message, cause);
-        }
+        return info;
     }
 }

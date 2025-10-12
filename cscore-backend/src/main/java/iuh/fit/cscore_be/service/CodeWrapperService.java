@@ -1,476 +1,558 @@
 package iuh.fit.cscore_be.service;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import iuh.fit.cscore_be.entity.Question;
 import iuh.fit.cscore_be.entity.TestCase;
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
+import jakarta.annotation.PostConstruct;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Service to wrap student function implementations into complete executable programs
- * Enhanced with Universal Wrapper System for intelligent, configurable code wrapping
- * This solves the issue where students submit only function code but the system expects complete programs
+ * Code Wrapper Service
+ * Unified service providing intelligent code wrapping with:
+ * - Template-driven approach using JSON templates
+ * - Automatic function signature analysis
+ * - Test case pattern detection
+ * - Multi-language support
+ * - Fallback strategies for edge cases
  */
 @Service
 @Slf4j
 public class CodeWrapperService {
 
-    @Autowired
-    private EnhancedCodeWrapperService enhancedWrapperService;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private Map<String, WrapperTemplate> wrapperTemplates = new HashMap<>();
+    private Map<String, Map<String, WrapperTemplate>> languageTemplates = new HashMap<>();
+    
+    @PostConstruct
+    public void initializeTemplates() {
+        loadTemplatesFromResources();
+    }
 
     /**
-     * Wrap student function code into a complete executable program
-     * Enhanced with Universal Wrapper System for intelligent code analysis
-     * @param studentCode The function code submitted by the student
-     * @param question The question containing metadata about the expected function
-     * @param language The programming language
-     * @return Complete executable program
+     * Main entry point - Wrap function code into complete executable program
      */
     public String wrapFunctionCode(String studentCode, Question question, String language) {
         return wrapFunctionCode(studentCode, question, language, null);
     }
 
     /**
-     * Enhanced wrapper method with test case analysis
-     * @param studentCode The function code submitted by the student
-     * @param question The question containing metadata about the expected function
-     * @param language The programming language
-     * @param testCases Test cases for pattern analysis (optional)
-     * @return Complete executable program
+     * Enhanced wrapper with test case analysis
      */
     public String wrapFunctionCode(String studentCode, Question question, String language, List<TestCase> testCases) {
         try {
-            // First, try the enhanced universal wrapper system
-            log.info("Attempting enhanced wrapper generation for language: {}", language);
-            String enhancedResult = enhancedWrapperService.wrapFunctionCode(studentCode, question, language, testCases);
+            log.info("Wrapping function code for language: {}, function: {}", 
+                     language, question != null ? question.getFunctionName() : "unknown");
+
+            // 1. Check if already has main function
+            if (hasMainFunction(studentCode, language)) {
+                log.info("Code already has main function, using as-is");
+                return studentCode;
+            }
             
-            if (enhancedResult != null && !enhancedResult.equals(studentCode)) {
-                log.info("Successfully generated enhanced wrapper");
-                return enhancedResult;
+            // 2. Analyze function signature
+            FunctionAnalysisResult signatureAnalysis = analyzeFunctionSignature(studentCode, question);
+            
+            // 3. Analyze test case patterns
+            TestCaseAnalysis testCaseAnalysis = analyzeTestCases(testCases);
+            
+            // 4. Generate wrapper using templates
+            return generateTemplateWrapper(studentCode, question, language, signatureAnalysis, testCaseAnalysis);
+            
+        } catch (Exception e) {
+            log.error("Error in unified wrapper generation", e);
+            return generateFallbackWrapper(studentCode, question, language);
+        }
+    }
+
+    // ========== TEMPLATE-BASED WRAPPER GENERATION ==========
+    
+    private String generateTemplateWrapper(String studentCode, Question question, String language,
+                                         FunctionAnalysisResult signatureAnalysis,
+                                         TestCaseAnalysis testCaseAnalysis) {
+        
+        // Find best template
+        WrapperTemplate template = findBestTemplate(language, testCaseAnalysis.getInputPattern(), signatureAnalysis);
+        
+        if (template != null) {
+            return generateFromTemplate(template, studentCode, signatureAnalysis, testCaseAnalysis);
+        } else {
+            log.warn("No suitable template found for language: {}, pattern: {}", 
+                     language, testCaseAnalysis.getInputPattern());
+            return generateFallbackWrapper(studentCode, question, language);
+        }
+    }
+    
+    private WrapperTemplate findBestTemplate(String language, String pattern, FunctionAnalysisResult signatureAnalysis) {
+        String languageKey = language.toLowerCase();
+        
+        // First, try to find universal template
+        WrapperTemplate universalTemplate = wrapperTemplates.get(languageKey + "_universal");
+        if (universalTemplate != null && universalTemplate.getPatterns().contains(pattern)) {
+            log.info("Using universal template for {}", language);
+            return universalTemplate;
+        }
+        
+        // Then try specific pattern templates
+        if (languageTemplates.containsKey(languageKey)) {
+            Map<String, WrapperTemplate> langTemplates = languageTemplates.get(languageKey);
+            WrapperTemplate specificTemplate = langTemplates.get(pattern);
+            if (specificTemplate != null) {
+                log.info("Using specific template for {} pattern: {}", language, pattern);
+                return specificTemplate;
+            }
+        }
+        
+        // Fallback to any available template for the language
+        if (languageTemplates.containsKey(languageKey)) {
+            Map<String, WrapperTemplate> langTemplates = languageTemplates.get(languageKey);
+            if (!langTemplates.isEmpty()) {
+                WrapperTemplate fallbackTemplate = langTemplates.values().iterator().next();
+                log.info("Using fallback template for {}", language);
+                return fallbackTemplate;
+            }
+        }
+        
+        return null;
+    }
+    
+    private String generateFromTemplate(WrapperTemplate template, String studentCode,
+                                      FunctionAnalysisResult signatureAnalysis,
+                                      TestCaseAnalysis testCaseAnalysis) {
+        
+        String templateContent = template.getTemplate();
+        
+        // Replace template placeholders
+        templateContent = templateContent.replace("{STUDENT_CODE}", studentCode);
+        templateContent = templateContent.replace("{FUNCTION_NAME}", 
+                         signatureAnalysis.getFunctionName() != null ? signatureAnalysis.getFunctionName() : "main");
+        templateContent = templateContent.replace("{PATTERN_TYPE}", testCaseAnalysis.getInputPattern());
+        
+        // Replace parameter types if available
+        if (signatureAnalysis.getParameterTypes() != null && !signatureAnalysis.getParameterTypes().isEmpty()) {
+            String expectedTypes = "[\"" + String.join("\", \"", signatureAnalysis.getParameterTypes()) + "\"]";
+            templateContent = templateContent.replace("{EXPECTED_TYPES}", expectedTypes);
+        } else {
+            templateContent = templateContent.replace("{EXPECTED_TYPES}", "[]");
+        }
+        
+        // Additional language-specific replacements
+        templateContent = performLanguageSpecificReplacements(templateContent, signatureAnalysis);
+        
+        log.debug("Generated wrapper code from template");
+        return templateContent;
+    }
+    
+    private String performLanguageSpecificReplacements(String template, FunctionAnalysisResult analysis) {
+        // Handle language-specific patterns
+        if (analysis.getFunctionName() != null) {
+            template = template.replace("{FUNCTION_CALL}", analysis.getFunctionName());
+        }
+        
+        if (analysis.getReturnType() != null) {
+            template = template.replace("{RETURN_TYPE}", analysis.getReturnType());
+        }
+        
+        return template;
+    }
+
+    // ========== FUNCTION SIGNATURE ANALYSIS ==========
+    
+    private FunctionAnalysisResult analyzeFunctionSignature(String code, Question question) {
+        FunctionAnalysisResult result = new FunctionAnalysisResult();
+        
+        // Try to extract from question metadata first
+        if (question != null) {
+            result.setFunctionName(question.getFunctionName());
+            if (question.getFunctionSignature() != null) {
+                parseSignatureFromString(question.getFunctionSignature(), result);
+            }
+        }
+        
+        // If no question metadata, try to extract from code
+        if (result.getFunctionName() == null) {
+            extractFunctionFromCode(code, result);
+        }
+        
+        // Set defaults if nothing found
+        if (result.getFunctionName() == null) {
+            result.setFunctionName("main");
+            result.setParameterTypes(Arrays.asList("string"));
+            result.setReturnType("void");
+        }
+        
+        return result;
+    }
+    
+    private void parseSignatureFromString(String signature, FunctionAnalysisResult result) {
+        try {
+            // Parse function signature like "int add(int a, int b)"
+            Pattern pattern = Pattern.compile("(\\w+)\\s+(\\w+)\\s*\\(([^)]*)\\)");
+            Matcher matcher = pattern.matcher(signature.trim());
+            
+            if (matcher.find()) {
+                result.setReturnType(matcher.group(1));
+                result.setFunctionName(matcher.group(2));
+                
+                String params = matcher.group(3).trim();
+                if (!params.isEmpty()) {
+                    List<String> paramTypes = new ArrayList<>();
+                    String[] paramParts = params.split(",");
+                    for (String param : paramParts) {
+                        String[] typeName = param.trim().split("\\s+");
+                        if (typeName.length > 0) {
+                            paramTypes.add(typeName[0]);
+                        }
+                    }
+                    result.setParameterTypes(paramTypes);
+                }
             }
         } catch (Exception e) {
-            log.warn("Enhanced wrapper generation failed, falling back to legacy system: {}", e.getMessage());
+            log.warn("Failed to parse function signature: {}", signature, e);
         }
-        
-        // Fallback to legacy system
-        log.info("Using legacy wrapper system as fallback");
-        return wrapFunctionCodeLegacy(studentCode, question, language);
     }
-
-    /**
-     * Legacy wrapper method (preserved for backward compatibility)
-     * @param studentCode The function code submitted by the student
-     * @param question The question containing metadata about the expected function
-     * @param language The programming language
-     * @return Complete executable program
-     */
-    private String wrapFunctionCodeLegacy(String studentCode, Question question, String language) {
-        // Check if the code already has a main function
-        if (hasMainFunction(studentCode, language)) {
-            log.info("Student code already has main function, using as-is");
-            return studentCode;
-        }
+    
+    private void extractFunctionFromCode(String code, FunctionAnalysisResult result) {
+        // Try to find function definitions in code
+        List<Pattern> functionPatterns = Arrays.asList(
+            Pattern.compile("def\\s+(\\w+)\\s*\\(([^)]*)\\):"),  // Python
+            Pattern.compile("(\\w+)\\s+(\\w+)\\s*\\(([^)]*)\\)\\s*\\{"),  // C/C++/Java (simplified)
+            Pattern.compile("function\\s+(\\w+)\\s*\\(([^)]*)\\)")  // JavaScript
+        );
         
-        // Extract function information from student code or use question metadata
-        FunctionInfo functionInfo = extractFunctionInfo(studentCode, question, language);
-        
-        if (functionInfo == null || functionInfo.functionName == null) {
-            log.warn("Could not extract function information for language {}, returning original code. Question function name: {}, signature: {}", 
-                     language, 
-                     question != null ? question.getFunctionName() : "null",
-                     question != null ? question.getFunctionSignature() : "null");
-            return studentCode;
-        }
-        
-        log.debug("Extracted function info - Name: {}, Parameters: {}", functionInfo.functionName, functionInfo.parameters);
-        
-        // Generate wrapper code based on language
-        switch (language.toLowerCase()) {
-            case "c":
-                return wrapCFunction(studentCode, functionInfo);
-            case "cpp":
-            case "c++":
-                return wrapCppFunction(studentCode, functionInfo);
-            case "java":
-                return wrapJavaFunction(studentCode, functionInfo);
-            case "python":
-                return wrapPythonFunction(studentCode, functionInfo);
-            default:
-                log.warn("Unsupported language for code wrapping: {}", language);
-                return studentCode;
+        for (Pattern pattern : functionPatterns) {
+            Matcher matcher = pattern.matcher(code);
+            if (matcher.find()) {
+                result.setFunctionName(matcher.group(matcher.groupCount() - 1));
+                break;
+            }
         }
     }
 
-    /**
-     * Check if the code already has a main function
-     */
+    // ========== TEST CASE ANALYSIS ==========
+    
+    private TestCaseAnalysis analyzeTestCases(List<TestCase> testCases) {
+        TestCaseAnalysis analysis = new TestCaseAnalysis();
+        
+        if (testCases == null || testCases.isEmpty()) {
+            analysis.setInputPattern("single_value");
+            analysis.setConfidence(0.5);
+            return analysis;
+        }
+        
+        // Analyze input patterns
+        Map<String, Integer> patternCounts = new HashMap<>();
+        
+        for (TestCase testCase : testCases) {
+            String input = testCase.getInput();
+            String detectedPattern = detectInputPattern(input);
+            patternCounts.put(detectedPattern, patternCounts.getOrDefault(detectedPattern, 0) + 1);
+        }
+        
+        // Find most common pattern
+        String mostCommonPattern = patternCounts.entrySet().stream()
+                .max(Map.Entry.comparingByValue())
+                .map(Map.Entry::getKey)
+                .orElse("single_value");
+        
+        analysis.setInputPattern(mostCommonPattern);
+        analysis.setConfidence(patternCounts.get(mostCommonPattern) / (double) testCases.size());
+        
+        return analysis;
+    }
+    
+    private String detectInputPattern(String input) {
+        if (input == null || input.trim().isEmpty()) {
+            return "single_value";
+        }
+        
+        String trimmed = input.trim();
+        
+        // Check for string + character pattern (e.g., "hello w")
+        if (trimmed.matches(".*\".*\"\\s+\\w")) {
+            return "string_char";
+        }
+        
+        // Check for array pattern (numbers separated by spaces/commas)
+        if (trimmed.matches("^[\\d\\s,.-]+$")) {
+            String[] parts = trimmed.split("[\\s,]+");
+            if (parts.length > 2) {
+                return "array_size";
+            } else if (parts.length == 1) {
+                return "single_value";
+            } else {
+                return "multiple_values";
+            }
+        }
+        
+        // Check for matrix pattern (starts with dimensions)
+        if (trimmed.matches("^\\d+\\s+\\d+\\s+[\\d\\s]+$")) {
+            return "matrix";
+        }
+        
+        // Default to single value
+        return "single_value";
+    }
+
+    // ========== MAIN FUNCTION DETECTION ==========
+    
     private boolean hasMainFunction(String code, String language) {
+        if (code == null) return false;
+        
         switch (language.toLowerCase()) {
+            case "java":
+                return code.contains("public static void main") || code.contains("static void main");
             case "c":
             case "cpp":
             case "c++":
-                // Look for main function in C/C++
-                Pattern cMainPattern = Pattern.compile("int\\s+main\\s*\\([^)]*\\)\\s*\\{", Pattern.CASE_INSENSITIVE);
-                return cMainPattern.matcher(code).find();
-            case "java":
-                // Look for main method in Java
-                Pattern javaMainPattern = Pattern.compile("public\\s+static\\s+void\\s+main\\s*\\(", Pattern.CASE_INSENSITIVE);
-                return javaMainPattern.matcher(code).find();
+                return code.contains("int main(") || code.contains("void main(");
             case "python":
-                // Look for if __name__ == "__main__" pattern - this indicates a complete program
-                // Just having print() or input() doesn't mean it's a complete program
-                return code.contains("if __name__ == \"__main__\"") || 
-                       code.contains("if __name__=='__main__'") ||
-                       code.contains("if __name__ == '__main__'") ||
-                       code.contains("if __name__=='__main__'");
+                return code.contains("if __name__ == \"__main__\":") || 
+                       code.contains("if __name__ == '__main__':");
             default:
                 return false;
         }
     }
 
-    /**
-     * Extract function information from student code or question metadata
-     */
-    private FunctionInfo extractFunctionInfo(String studentCode, Question question, String language) {
-        FunctionInfo info = new FunctionInfo();
+    // ========== FALLBACK WRAPPER GENERATION ==========
+    
+    private String generateFallbackWrapper(String studentCode, Question question, String language) {
+        log.info("Generating fallback wrapper for language: {}", language);
         
-        // Try to extract from question metadata first
-        if (question.getFunctionName() != null && !question.getFunctionName().trim().isEmpty()) {
-            info.functionName = question.getFunctionName().trim();
-            log.info("Using function name from question metadata: {}", info.functionName);
-        }
-        
-        if (question.getFunctionSignature() != null && !question.getFunctionSignature().trim().isEmpty()) {
-            info.functionSignature = question.getFunctionSignature().trim();
-            log.info("Using function signature from question metadata: {}", info.functionSignature);
-        }
-        
-        // If metadata is not available, try to extract from student code
-        if (info.functionName == null) {
-            info = extractFromStudentCode(studentCode, language);
-        }
-        
-        return info;
-    }
-
-    /**
-     * Extract function information from student code
-     */
-    private FunctionInfo extractFromStudentCode(String code, String language) {
-        FunctionInfo info = new FunctionInfo();
+        String functionName = question != null && question.getFunctionName() != null ? 
+                             question.getFunctionName() : "main";
         
         switch (language.toLowerCase()) {
+            case "python":
+                return generatePythonFallback(studentCode, functionName);
+            case "java":
+                return generateJavaFallback(studentCode, functionName);
             case "c":
+                return generateCFallback(studentCode, functionName);
             case "cpp":
             case "c++":
-                // Pattern to match C/C++ function definition - handle const keywords and pointer types
-                Pattern cPattern = Pattern.compile(
-                    "((?:const\\s+)?\\w+(?:\\s*\\*?)*)\\s+(\\w+)\\s*\\(([^)]*)\\)\\s*\\{", 
-                    Pattern.MULTILINE | Pattern.DOTALL
-                );
-                Matcher cMatcher = cPattern.matcher(code);
-                if (cMatcher.find()) {
-                    info.returnType = cMatcher.group(1).trim();
-                    info.functionName = cMatcher.group(2).trim();
-                    info.parameters = cMatcher.group(3).trim();
-                    info.functionSignature = info.returnType + " " + info.functionName + "(" + info.parameters + ")";
-                    log.debug("Extracted C function: {} with parameters: {}", info.functionName, info.parameters);
+                return generateCppFallback(studentCode, functionName);
+            default:
+                log.warn("No fallback available for language: {}", language);
+                return studentCode;
+        }
+    }
+    
+    private String generatePythonFallback(String studentCode, String functionName) {
+        return studentCode + "\n\n" +
+               "if __name__ == '__main__':\n" +
+               "    try:\n" +
+               "        input_line = input().strip()\n" +
+               "        # Try to parse as numbers\n" +
+               "        try:\n" +
+               "            parts = input_line.split()\n" +
+               "            numbers = [int(x) for x in parts]\n" +
+               "            if len(numbers) == 1:\n" +
+               "                " + functionName + "(numbers[0])\n" +
+               "            else:\n" +
+               "                " + functionName + "(numbers)\n" +
+               "        except:\n" +
+               "            " + functionName + "(input_line)\n" +
+               "    except Exception as e:\n" +
+               "        print(f'Error: {e}')\n";
+    }
+    
+    private String generateJavaFallback(String studentCode, String functionName) {
+        return "import java.util.*;\n\n" +
+               "public class Solution {\n" +
+               "    " + studentCode + "\n\n" +
+               "    public static void main(String[] args) {\n" +
+               "        Scanner scanner = new Scanner(System.in);\n" +
+               "        try {\n" +
+               "            String input = scanner.nextLine();\n" +
+               "            // Basic parsing logic\n" +
+               "            try {\n" +
+               "                int value = Integer.parseInt(input.trim());\n" +
+               "                " + functionName + "(value);\n" +
+               "            } catch (NumberFormatException e) {\n" +
+               "                " + functionName + "(input);\n" +
+               "            }\n" +
+               "        } finally {\n" +
+               "            scanner.close();\n" +
+               "        }\n" +
+               "    }\n" +
+               "}\n";
+    }
+    
+    private String generateCFallback(String studentCode, String functionName) {
+        return "#include <stdio.h>\n" +
+               "#include <stdlib.h>\n" +
+               "#include <string.h>\n" +
+               "#include <math.h>\n\n" +
+               studentCode + "\n\n" +
+               "int main() {\n" +
+               "    char input[1000];\n" +
+               "    if (fgets(input, sizeof(input), stdin)) {\n" +
+               "        input[strcspn(input, \"\\n\")] = 0;\n" +
+               "        int value = atoi(input);\n" +
+               "        " + functionName + "(value);\n" +
+               "    }\n" +
+               "    return 0;\n" +
+               "}\n";
+    }
+    
+    private String generateCppFallback(String studentCode, String functionName) {
+        return "#include <iostream>\n" +
+               "#include <string>\n" +
+               "#include <vector>\n" +
+               "#include <sstream>\n" +
+               "using namespace std;\n\n" +
+               studentCode + "\n\n" +
+               "int main() {\n" +
+               "    string input;\n" +
+               "    getline(cin, input);\n" +
+               "    try {\n" +
+               "        int value = stoi(input);\n" +
+               "        " + functionName + "(value);\n" +
+               "    } catch (...) {\n" +
+               "        " + functionName + "(input);\n" +
+               "    }\n" +
+               "    return 0;\n" +
+               "}\n";
+    }
+
+    // ========== TEMPLATE LOADING ==========
+    
+    private void loadTemplatesFromResources() {
+        try {
+            // Load universal templates
+            loadUniversalTemplates();
+            
+            // Load legacy templates for backward compatibility
+            loadLegacyTemplates();
+            
+            log.info("Loaded {} wrapper templates", wrapperTemplates.size());
+            
+        } catch (Exception e) {
+            log.error("Failed to load wrapper templates", e);
+            // Initialize with empty templates to prevent NPE
+            wrapperTemplates = new HashMap<>();
+            languageTemplates = new HashMap<>();
+        }
+    }
+    
+    private void loadUniversalTemplates() {
+        try {
+            ClassPathResource resource = new ClassPathResource("universal-wrapper-templates.json");
+            if (resource.exists()) {
+                try (InputStream inputStream = resource.getInputStream()) {
+                    Map<String, Object> templates = objectMapper.readValue(inputStream, new TypeReference<Map<String, Object>>() {});
+                    
+                    for (Map.Entry<String, Object> entry : templates.entrySet()) {
+                        String templateName = entry.getKey();
+                        Map<String, Object> templateData = (Map<String, Object>) entry.getValue();
+                        
+                        WrapperTemplate template = new WrapperTemplate();
+                        template.setDescription((String) templateData.get("description"));
+                        template.setTemplate((String) templateData.get("template"));
+                        template.setPatterns((List<String>) templateData.get("patterns"));
+                        template.setLanguages((List<String>) templateData.get("languages"));
+                        template.setComplexity((String) templateData.get("complexity"));
+                        
+                        wrapperTemplates.put(templateName, template);
+                        
+                        // Also organize by language
+                        for (String language : template.getLanguages()) {
+                            languageTemplates.computeIfAbsent(language.toLowerCase(), k -> new HashMap<>())
+                                            .put("universal", template);
+                        }
+                    }
                 }
-                break;
-            case "java":
-                // Pattern to match Java method definition
-                Pattern javaPattern = Pattern.compile(
-                    "(public|private|protected)?\\s*(static)?\\s*(\\w+(?:<[^>]+>)?)\\s+(\\w+)\\s*\\(([^)]*)\\)\\s*\\{",
-                    Pattern.MULTILINE
-                );
-                Matcher javaMatcher = javaPattern.matcher(code);
-                if (javaMatcher.find()) {
-                    info.returnType = javaMatcher.group(3).trim();
-                    info.functionName = javaMatcher.group(4).trim();
-                    info.parameters = javaMatcher.group(5).trim();
+            }
+        } catch (Exception e) {
+            log.warn("Failed to load universal templates", e);
+        }
+    }
+    
+    private void loadLegacyTemplates() {
+        try {
+            ClassPathResource resource = new ClassPathResource("wrapper-templates.json");
+            if (resource.exists()) {
+                try (InputStream inputStream = resource.getInputStream()) {
+                    Map<String, Object> templates = objectMapper.readValue(inputStream, new TypeReference<Map<String, Object>>() {});
+                    
+                    Map<String, Object> wrapperTemplatesData = (Map<String, Object>) templates.get("wrapperTemplates");
+                    if (wrapperTemplatesData != null) {
+                        for (Map.Entry<String, Object> languageEntry : wrapperTemplatesData.entrySet()) {
+                            String language = languageEntry.getKey();
+                            Map<String, Object> languageTemplates = (Map<String, Object>) languageEntry.getValue();
+                            
+                            for (Map.Entry<String, Object> patternEntry : languageTemplates.entrySet()) {
+                                String pattern = patternEntry.getKey();
+                                Map<String, Object> patternData = (Map<String, Object>) patternEntry.getValue();
+                                
+                                WrapperTemplate template = new WrapperTemplate();
+                                template.setDescription((String) patternData.get("description"));
+                                template.setTemplate((String) patternData.get("template"));
+                                template.setPatterns(Arrays.asList(pattern));
+                                template.setLanguages(Arrays.asList(language));
+                                template.setComplexity("legacy");
+                                
+                                String templateKey = language + "_" + pattern;
+                                wrapperTemplates.put(templateKey, template);
+                                
+                                // Organize by language and pattern
+                                this.languageTemplates.computeIfAbsent(language.toLowerCase(), k -> new HashMap<>())
+                                                      .put(pattern, template);
+                            }
+                        }
+                    }
                 }
-                break;
-            case "python":
-                // Pattern to match Python function definition
-                Pattern pythonPattern = Pattern.compile("def\\s+(\\w+)\\s*\\(([^)]*)\\):", Pattern.MULTILINE);
-                Matcher pythonMatcher = pythonPattern.matcher(code);
-                if (pythonMatcher.find()) {
-                    info.functionName = pythonMatcher.group(1).trim();
-                    info.parameters = pythonMatcher.group(2).trim();
-                }
-                break;
-        }
-        
-        return info.functionName != null ? info : null;
-    }
-
-    /**
-     * Wrap C function with main function and I/O handling
-     * UPDATED: Uses Enhanced Universal Wrapper System instead of hardcoded logic
-     */
-    private String wrapCFunction(String functionCode, FunctionInfo info) {
-        log.info("Legacy C wrapper: Attempting to use Enhanced system for function: {}", 
-                 info != null ? info.functionName : "unknown");
-        
-        try {
-            // Try to create a basic question object from FunctionInfo
-            Question tempQuestion = createQuestionFromFunctionInfo(info);
-            
-            // Attempt to use Enhanced system
-            String enhancedResult = enhancedWrapperService.wrapFunctionCode(
-                functionCode, tempQuestion, "c", null);
-            
-            if (enhancedResult != null && !enhancedResult.equals(functionCode)) {
-                log.info("Successfully generated C wrapper using Enhanced system");
-                return enhancedResult;
             }
         } catch (Exception e) {
-            log.warn("Enhanced C wrapper failed in legacy fallback: {}", e.getMessage());
+            log.warn("Failed to load legacy templates", e);
         }
-        
-        // Ultimate fallback: Basic C wrapper without hardcoded parsing
-        log.warn("Using basic C wrapper as ultimate fallback");
-        return generateBasicCWrapper(functionCode, info);
+    }
+
+    // ========== DATA CLASSES ==========
+    
+    @Data
+    public static class WrapperTemplate {
+        private String description;
+        private String template;
+        private List<String> patterns;
+        private List<String> languages;
+        private String complexity;
     }
     
-    /**
-     * Generate basic C wrapper using UniversalWrapperService as fallback
-     */
-    private String generateBasicCWrapper(String functionCode, FunctionInfo info) {
-        log.warn("Basic C wrapper fallback - attempting UniversalWrapperService");
+    @Data
+    public static class FunctionAnalysisResult {
+        private String functionName;
+        private String returnType;
+        private List<String> parameterTypes;
+        private int parameterCount;
         
-        try {
-            // Use UniversalWrapperService as final fallback
-            UniversalWrapperService universalService = new UniversalWrapperService();
-            UniversalWrapperService.FunctionSignature signature = new UniversalWrapperService.FunctionSignature();
-            
-            if (info != null) {
-                signature.setFunctionName(info.functionName);
-                signature.setParameters(info.parameters);
-                signature.setReturnType(info.returnType);
-                signature.setLanguage("c");
-            }
-            
-            String result = universalService.generateUniversalWrapper(functionCode, signature, null);
-            if (result != null && !result.equals(functionCode)) {
-                log.info("UniversalWrapperService generated C fallback successfully");
-                return result;
-            }
-        } catch (Exception e) {
-            log.error("UniversalWrapperService C fallback failed: {}", e.getMessage());
+        public FunctionAnalysisResult() {
+            this.parameterTypes = new ArrayList<>();
+            this.parameterCount = 0;
         }
-        
-        // Return original code if all systems fail
-        log.error("All wrapper systems failed for C - returning original code");
-        return functionCode;
-    }
-
-    /**
-     * Wrap C++ function using Enhanced Universal Wrapper System
-     */
-    private String wrapCppFunction(String functionCode, FunctionInfo info) {
-        log.info("Legacy C++ wrapper: Attempting to use Enhanced system for function: {}", 
-                 info != null ? info.functionName : "unknown");
-        
-        try {
-            // Try to create a basic question object from FunctionInfo
-            Question tempQuestion = createQuestionFromFunctionInfo(info);
-            
-            // Attempt to use Enhanced system first
-            String enhancedResult = enhancedWrapperService.wrapFunctionCode(
-                functionCode, tempQuestion, "cpp", null);
-            
-            if (enhancedResult != null && !enhancedResult.equals(functionCode)) {
-                log.info("Successfully generated C++ wrapper using Enhanced system");
-                return enhancedResult;
-            }
-        } catch (Exception e) {
-            log.warn("Enhanced C++ wrapper failed in legacy fallback: {}", e.getMessage());
-        }
-        
-        // Ultimate fallback: Use UniversalWrapperService
-        log.warn("Using UniversalWrapperService as C++ ultimate fallback");
-        return generateUniversalCppWrapper(functionCode, info);
     }
     
-    /**
-     * Generate C++ wrapper using UniversalWrapperService as fallback
-     */
-    private String generateUniversalCppWrapper(String functionCode, FunctionInfo info) {
-        try {
-            // Use UniversalWrapperService as final fallback
-            UniversalWrapperService universalService = new UniversalWrapperService();
-            UniversalWrapperService.FunctionSignature signature = new UniversalWrapperService.FunctionSignature();
-            
-            if (info != null) {
-                signature.setFunctionName(info.functionName);
-                signature.setParameters(info.parameters);
-                signature.setReturnType(info.returnType);
-                signature.setLanguage("cpp");
-            }
-            
-            String result = universalService.generateUniversalWrapper(functionCode, signature, null);
-            if (result != null && !result.equals(functionCode)) {
-                log.info("UniversalWrapperService generated C++ fallback successfully");
-                return result;
-            }
-        } catch (Exception e) {
-            log.error("UniversalWrapperService C++ fallback failed: {}", e.getMessage());
+    @Data
+    public static class TestCaseAnalysis {
+        private String inputPattern;
+        private double confidence;
+        private Map<String, Object> metadata;
+        
+        public TestCaseAnalysis() {
+            this.inputPattern = "single_value";
+            this.confidence = 1.0;
+            this.metadata = new HashMap<>();
         }
-        
-        // Return original code if all systems fail
-        log.error("All wrapper systems failed for C++ - returning original code");
-        return functionCode;
-    }
-
-    /**
-     * Wrap Java function with main method
-     * UPDATED: Uses Enhanced Universal Wrapper System instead of hardcoded logic
-     */
-    private String wrapJavaFunction(String functionCode, FunctionInfo info) {
-        log.info("Legacy Java wrapper: Attempting to use Enhanced system for function: {}", 
-                 info != null ? info.functionName : "unknown");
-        
-        try {
-            // Try to create a basic question object from FunctionInfo
-            Question tempQuestion = createQuestionFromFunctionInfo(info);
-            
-            // Attempt to use Enhanced system
-            String enhancedResult = enhancedWrapperService.wrapFunctionCode(
-                functionCode, tempQuestion, "java", null);
-            
-            if (enhancedResult != null && !enhancedResult.equals(functionCode)) {
-                log.info("Successfully generated Java wrapper using Enhanced system");
-                return enhancedResult;
-            }
-        } catch (Exception e) {
-            log.warn("Enhanced Java wrapper failed in legacy fallback: {}", e.getMessage());
-        }
-        
-        // Ultimate fallback: Basic Java wrapper without hardcoded parsing
-        log.warn("Using basic Java wrapper as ultimate fallback");
-        return generateBasicJavaWrapper(functionCode, info);
-    }
-    
-    /**
-     * Generate basic Java wrapper using UniversalWrapperService as fallback
-     */
-    private String generateBasicJavaWrapper(String functionCode, FunctionInfo info) {
-        log.warn("Basic Java wrapper fallback - attempting UniversalWrapperService");
-        
-        try {
-            // Use UniversalWrapperService as final fallback
-            UniversalWrapperService universalService = new UniversalWrapperService();
-            UniversalWrapperService.FunctionSignature signature = new UniversalWrapperService.FunctionSignature();
-            
-            if (info != null) {
-                signature.setFunctionName(info.functionName);
-                signature.setParameters(info.parameters);
-                signature.setReturnType(info.returnType);
-                signature.setLanguage("java");
-            }
-            
-            String result = universalService.generateUniversalWrapper(functionCode, signature, null);
-            if (result != null && !result.equals(functionCode)) {
-                log.info("UniversalWrapperService generated Java fallback successfully");
-                return result;
-            }
-        } catch (Exception e) {
-            log.error("UniversalWrapperService Java fallback failed: {}", e.getMessage());
-        }
-        
-        // Return original code if all systems fail
-        log.error("All wrapper systems failed for Java - returning original code");
-        return functionCode;
-    }
-
-    /**
-     * Wrap Python function with main execution
-     * UPDATED: Uses Enhanced Universal Wrapper System instead of hardcoded logic
-     */
-    private String wrapPythonFunction(String functionCode, FunctionInfo info) {
-        log.info("Legacy Python wrapper: Attempting to use Enhanced system for function: {}", 
-                 info != null ? info.functionName : "unknown");
-        
-        try {
-            // Try to create a basic question object from FunctionInfo
-            Question tempQuestion = createQuestionFromFunctionInfo(info);
-            
-            // Attempt to use Enhanced system
-            String enhancedResult = enhancedWrapperService.wrapFunctionCode(
-                functionCode, tempQuestion, "python", null);
-            
-            if (enhancedResult != null && !enhancedResult.equals(functionCode)) {
-                log.info("Successfully generated Python wrapper using Enhanced system");
-                return enhancedResult;
-            }
-        } catch (Exception e) {
-            log.warn("Enhanced Python wrapper failed in legacy fallback: {}", e.getMessage());
-        }
-        
-        // Ultimate fallback: Basic wrapper without hardcoded parsing
-        log.warn("Using basic Python wrapper as ultimate fallback");
-        return generateBasicPythonWrapper(functionCode, info);
-    }
-    
-    /**
-     * Create a temporary Question object from FunctionInfo for Enhanced system
-     */
-    private Question createQuestionFromFunctionInfo(FunctionInfo info) {
-        Question tempQuestion = new Question();
-        if (info != null) {
-            tempQuestion.setFunctionName(info.functionName);
-            tempQuestion.setFunctionSignature(info.functionSignature);
-        }
-        return tempQuestion;
-    }
-    
-    /**
-     * Generate basic Python wrapper using UniversalWrapperService as fallback
-     * This is the ultimate fallback when all else fails
-     */
-    private String generateBasicPythonWrapper(String functionCode, FunctionInfo info) {
-        log.warn("Basic Python wrapper fallback - attempting UniversalWrapperService");
-        
-        try {
-            // Use UniversalWrapperService as final fallback
-            UniversalWrapperService universalService = new UniversalWrapperService();
-            UniversalWrapperService.FunctionSignature signature = new UniversalWrapperService.FunctionSignature();
-            
-            if (info != null) {
-                signature.setFunctionName(info.functionName);
-                signature.setParameters(info.parameters);
-                signature.setReturnType(info.returnType);
-                signature.setLanguage("python");
-            }
-            
-            String result = universalService.generateUniversalWrapper(functionCode, signature, null);
-            if (result != null && !result.equals(functionCode)) {
-                log.info("UniversalWrapperService generated Python fallback successfully");
-                return result;
-            }
-        } catch (Exception e) {
-            log.error("UniversalWrapperService Python fallback failed: {}", e.getMessage());
-        }
-        
-        // Return original code if all systems fail
-        log.error("All wrapper systems failed for Python - returning original code");
-        return functionCode;
-    }
-
-    // NOTE: Hardcode helper methods removed - pattern detection now handled by Enhanced system
-
-    /**
-     * Helper class to store function information
-     */
-    private static class FunctionInfo {
-        String functionName;
-        String returnType;
-        String parameters;
-        String functionSignature;
     }
 }

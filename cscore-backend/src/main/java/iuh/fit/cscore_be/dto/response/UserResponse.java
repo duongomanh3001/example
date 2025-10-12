@@ -124,4 +124,72 @@ public class UserResponse {
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
     }
+    
+    // Builder pattern
+    public static Builder builder() {
+        return new Builder();
+    }
+    
+    public static class Builder {
+        private UserResponse response = new UserResponse();
+        
+        public Builder id(Long id) {
+            response.id = id;
+            return this;
+        }
+        
+        public Builder username(String username) {
+            response.username = username;
+            return this;
+        }
+        
+        public Builder email(String email) {
+            response.email = email;
+            return this;
+        }
+        
+        public Builder fullName(String fullName) {
+            response.fullName = fullName;
+            return this;
+        }
+        
+        public Builder phone(String phone) {
+            response.phone = phone;
+            return this;
+        }
+        
+        public Builder studentId(String studentId) {
+            response.studentId = studentId;
+            return this;
+        }
+        
+        public Builder teacherId(String teacherId) {
+            response.teacherId = teacherId;
+            return this;
+        }
+        
+        public Builder role(Role role) {
+            response.role = role;
+            return this;
+        }
+        
+        public Builder isActive(Boolean isActive) {
+            response.isActive = isActive;
+            return this;
+        }
+        
+        public Builder createdAt(LocalDateTime createdAt) {
+            response.createdAt = createdAt;
+            return this;
+        }
+        
+        public Builder updatedAt(LocalDateTime updatedAt) {
+            response.updatedAt = updatedAt;
+            return this;
+        }
+        
+        public UserResponse build() {
+            return response;
+        }
+    }
 }

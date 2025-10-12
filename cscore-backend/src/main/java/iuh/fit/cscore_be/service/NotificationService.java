@@ -7,6 +7,7 @@ import iuh.fit.cscore_be.dto.response.NotificationResponse;
 import iuh.fit.cscore_be.dto.response.NotificationStatsResponse;
 import iuh.fit.cscore_be.entity.Assignment;
 import iuh.fit.cscore_be.entity.Course;
+import iuh.fit.cscore_be.entity.Enrollment;
 import iuh.fit.cscore_be.entity.Notification;
 import iuh.fit.cscore_be.entity.User;
 import iuh.fit.cscore_be.enums.NotificationCategory;
@@ -14,6 +15,7 @@ import iuh.fit.cscore_be.enums.NotificationType;
 import iuh.fit.cscore_be.enums.Role;
 import iuh.fit.cscore_be.repository.AssignmentRepository;
 import iuh.fit.cscore_be.repository.CourseRepository;
+import iuh.fit.cscore_be.repository.EnrollmentRepository;
 import iuh.fit.cscore_be.repository.NotificationRepository;
 import iuh.fit.cscore_be.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,6 +46,9 @@ public class NotificationService {
 
     @Autowired
     private AssignmentRepository assignmentRepository;
+
+    @Autowired
+    private EnrollmentRepository enrollmentRepository;
 
     /**
      * Get notifications for current user with filters
@@ -374,6 +379,44 @@ public class NotificationService {
     public void cleanupOldNotifications(int daysToKeep) {
         LocalDateTime cutoffDate = LocalDateTime.now().minusDays(daysToKeep);
         notificationRepository.deleteOldNotifications(cutoffDate);
+    }
+
+    /**
+     * Send notification about new assignment to all enrolled students
+     */
+    public void notifyNewAssignment(Assignment assignment) {
+        try {
+            Course course = assignment.getCourse();
+            
+            // Get all enrolled students using EnrollmentRepository
+            List<Enrollment> enrollments = enrollmentRepository.findByCourseAndIsActiveTrue(course);
+            
+            List<Notification> notifications = new ArrayList<>();
+            for (Enrollment enrollment : enrollments) {
+                User student = enrollment.getStudent();
+                Notification notification = new Notification(
+                        "Bài tập mới: " + assignment.getTitle(),
+                        "Bạn có bài tập mới trong khóa học " + course.getName() + 
+                        ". Hạn nộp: " + assignment.getEndTime().toString(),
+                        NotificationType.INFO,
+                        NotificationCategory.ASSIGNMENT,
+                        student
+                );
+                
+                notification.setRelatedEntityId(assignment.getId());
+                notification.setRelatedEntityType("Assignment");
+                notification.setActionUrl("/student/assignments/" + assignment.getId());
+                
+                notifications.add(notification);
+            }
+            
+            notificationRepository.saveAll(notifications);
+            
+            // TODO: Send real-time notifications via WebSocket
+        } catch (Exception e) {
+            // Log the error but don't throw to avoid breaking assignment creation
+            System.err.println("Failed to send assignment notifications: " + e.getMessage());
+        }
     }
 
     /**

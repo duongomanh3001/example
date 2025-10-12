@@ -1,7 +1,7 @@
 package iuh.fit.cscore_be.controller;
 
 import iuh.fit.cscore_be.enums.ProgrammingLanguage;
-import iuh.fit.cscore_be.service.CompilerService;
+import iuh.fit.cscore_be.service.CodeExecutionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -20,7 +20,7 @@ import java.util.Set;
 @CrossOrigin(origins = "http://localhost:3000")
 public class SystemController {
     
-    private final CompilerService compilerService;
+    private final CodeExecutionService codeExecutionService;
     
     /**
      * Get system health status
@@ -49,7 +49,7 @@ public class SystemController {
     @GetMapping("/compilers")
     public ResponseEntity<Map<String, Object>> getCompilerStatus() {
         try {
-            Map<String, Object> systemRequirements = compilerService.getSystemRequirements();
+            Map<String, Object> systemRequirements = codeExecutionService.getSystemRequirements();
             return ResponseEntity.ok(systemRequirements);
         } catch (Exception e) {
             Map<String, Object> errorResponse = new HashMap<>();
@@ -64,7 +64,7 @@ public class SystemController {
     @GetMapping("/supported-languages")
     public ResponseEntity<Set<ProgrammingLanguage>> getSupportedLanguages() {
         try {
-            Set<ProgrammingLanguage> supportedLanguages = compilerService.getSupportedLanguages();
+            Set<ProgrammingLanguage> supportedLanguages = codeExecutionService.getSupportedLanguages();
             return ResponseEntity.ok(supportedLanguages);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
@@ -80,15 +80,15 @@ public class SystemController {
         
         try {
             ProgrammingLanguage progLang = ProgrammingLanguage.valueOf(language.toUpperCase());
-            boolean supported = compilerService.isLanguageSupported(progLang);
+            boolean supported = codeExecutionService.isLanguageSupported(progLang);
             
             response.put("language", language);
             response.put("supported", supported);
             
             if (supported) {
-                CompilerService.CompilerInfo info = compilerService.getCompilerInfo(progLang);
-                response.put("version", info.getVersion());
-                response.put("path", info.getPath());
+                Map<String, Object> info = codeExecutionService.getCompilerInfo(progLang);
+                response.put("version", info.get("version"));
+                response.put("path", info.get("path"));
             }
             
             return ResponseEntity.ok(response);

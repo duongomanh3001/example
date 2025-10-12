@@ -28,9 +28,7 @@ public class StudentService {
     private final AssignmentRepository assignmentRepository;
     private final SubmissionRepository submissionRepository;
     private final AutoGradingService autoGradingService;
-    private final EnhancedAutoGradingService enhancedAutoGradingService;
     private final UserRepository userRepository;
-    private final MultiQuestionSubmissionService multiQuestionSubmissionService;
     
     // Enhanced submit assignment method with multi-question support
     @Transactional
@@ -69,15 +67,8 @@ public class StudentService {
      */
     private SubmissionResponse handleMultiQuestionSubmission(Long assignmentId, Long studentId, 
                                                            SubmissionRequest request, Assignment assignment) {
-        // Convert legacy request to multi-question format
-        MultiQuestionSubmissionRequest multiRequest = convertToMultiQuestionRequest(request, assignment);
-        
-        // Use multi-question submission service
-        MultiQuestionSubmissionResponse multiResponse = multiQuestionSubmissionService
-                .submitMultiQuestionAssignment(assignmentId, studentId, multiRequest);
-        
-        // Convert back to legacy response for API compatibility
-        return multiQuestionSubmissionService.convertToLegacyResponse(multiResponse);
+        // Use integrated auto-grading service for submission
+        return autoGradingService.submitAndGradeBasic(request, assignment, studentId);
     }
     
     /**
@@ -145,7 +136,7 @@ public class StudentService {
                         
                         if (hasReferenceImplementation) {
                             log.info("Using enhanced grading (reference comparison) for submission: {}", submission.getId());
-                            enhancedAutoGradingService.performEnhancedGrading(submission);
+                            autoGradingService.gradeSubmissionEnhanced(submission.getId());
                         } else {
                             log.info("Using traditional grading (test case comparison) for submission: {}", submission.getId());
                             autoGradingService.gradeSubmission(submission);

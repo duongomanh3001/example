@@ -215,4 +215,112 @@ public class CourseResponse {
     public void setEnrollmentOpen(Boolean enrollmentOpen) {
         this.enrollmentOpen = enrollmentOpen;
     }
+    
+    // Builder pattern
+    public static Builder builder() {
+        return new Builder();
+    }
+    
+    public static class Builder {
+        private CourseResponse response = new CourseResponse();
+        
+        public Builder id(Long id) {
+            response.id = id;
+            return this;
+        }
+        
+        public Builder name(String name) {
+            response.name = name;
+            return this;
+        }
+        
+        public Builder title(String title) {
+            response.name = title; // Map title to name
+            return this;
+        }
+        
+        public Builder code(String code) {
+            response.code = code;
+            return this;
+        }
+        
+        public Builder description(String description) {
+            response.description = description;
+            return this;
+        }
+        
+        public Builder creditHours(Integer creditHours) {
+            response.creditHours = creditHours;
+            return this;
+        }
+        
+        public Builder semester(String semester) {
+            response.semester = semester;
+            return this;
+        }
+        
+        public Builder year(Integer year) {
+            response.year = year;
+            return this;
+        }
+        
+        public Builder academicYear(String academicYear) {
+            response.academicYear = academicYear;
+            return this;
+        }
+        
+        public Builder teacherName(String teacherName) {
+            response.teacherName = teacherName;
+            return this;
+        }
+        
+        public Builder studentCount(Long studentCount) {
+            response.studentCount = studentCount;
+            return this;
+        }
+        
+        public Builder assignmentCount(Long assignmentCount) {
+            response.assignmentCount = assignmentCount;
+            return this;
+        }
+        
+        public Builder isActive(Boolean isActive) {
+            response.isActive = isActive;
+            return this;
+        }
+        
+        public Builder createdAt(LocalDateTime createdAt) {
+            response.createdAt = createdAt;
+            return this;
+        }
+        
+        public Builder updatedAt(LocalDateTime updatedAt) {
+            response.updatedAt = updatedAt;
+            return this;
+        }
+        
+        public Builder maxStudents(Integer maxStudents) {
+            response.maxStudents = maxStudents;
+            return this;
+        }
+        
+        public Builder currentStudentCount(Integer currentStudentCount) {
+            response.currentStudentCount = currentStudentCount;
+            return this;
+        }
+        
+        public Builder enrollmentOpen(Boolean enrollmentOpen) {
+            response.enrollmentOpen = enrollmentOpen;
+            return this;
+        }
+        
+        public Builder teacher(TeacherInfo teacher) {
+            response.teacher = teacher;
+            return this;
+        }
+        
+        public CourseResponse build() {
+            return response;
+        }
+    }
 }

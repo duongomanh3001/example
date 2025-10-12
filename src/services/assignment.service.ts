@@ -91,7 +91,11 @@ class AssignmentServiceClass {
       options: [],
       isAnswered: assignment.isSubmitted,
       userAnswer: assignment.isSubmitted ? 'Đã nộp bài' : undefined,
-      selectedOptionIds: []
+      selectedOptionIds: [],
+      // Set language from assignment's programming languages (take first one if multiple)
+      language: assignment.programmingLanguages && assignment.programmingLanguages.length > 0 
+        ? assignment.programmingLanguages[0].toLowerCase() 
+        : undefined
     };
 
     return {

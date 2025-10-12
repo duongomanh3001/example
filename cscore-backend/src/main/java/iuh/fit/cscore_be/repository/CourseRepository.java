@@ -35,4 +35,8 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
     
     @Query("SELECT c FROM Course c WHERE c.isActive = true ORDER BY c.createdAt DESC")
     List<Course> findAllActiveCourses();
+    
+    // Additional missing methods
+    @Query("SELECT COUNT(e) FROM Enrollment e WHERE e.course.id = :courseId AND e.isActive = true")
+    Long countEnrolledStudents(@Param("courseId") Long courseId);
 }

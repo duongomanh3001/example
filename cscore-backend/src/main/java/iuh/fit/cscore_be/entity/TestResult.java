@@ -46,4 +46,13 @@ public class TestResult {
     
     @Column(columnDefinition = "TEXT")
     private String errorMessage;
+    
+    // Alias method for compatibility
+    public void setPassed(boolean passed) {
+        this.isPassed = passed;
+    }
+    
+    public boolean isPassed() {
+        return isPassed != null ? isPassed : false;
+    }
 }

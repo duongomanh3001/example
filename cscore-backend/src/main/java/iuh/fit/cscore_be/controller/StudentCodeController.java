@@ -2,7 +2,7 @@ package iuh.fit.cscore_be.controller;
 
 import iuh.fit.cscore_be.dto.request.QuestionCodeCheckRequest;
 import iuh.fit.cscore_be.dto.response.CodeExecutionResponse;
-import iuh.fit.cscore_be.service.QuestionCodeCheckService;
+import iuh.fit.cscore_be.service.AutoGradingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.*;
 @CrossOrigin(origins = {"http://localhost:3000", "http://localhost:3001"})
 public class StudentCodeController {
 
-    private final QuestionCodeCheckService questionCodeCheckService;
+    private final AutoGradingService autoGradingService;
 
     /**
      * Check student code against test cases for a specific question
@@ -34,7 +34,7 @@ public class StudentCodeController {
             log.info("Student {} checking code for question {} with input: {}", 
                 studentId, request.getQuestionId(), request.getInput() != null ? "yes" : "no");
             
-            CodeExecutionResponse result = questionCodeCheckService.checkQuestionCode(
+            CodeExecutionResponse result = autoGradingService.checkQuestionCode(
                 request.getQuestionId(), 
                 request.getCode(), 
                 request.getLanguage(),
@@ -66,7 +66,7 @@ public class StudentCodeController {
         
         try {
             String studentId = authentication.getName();
-            Double score = questionCodeCheckService.getQuestionScore(questionId, studentId);
+            Double score = autoGradingService.getQuestionScore(questionId, studentId);
             return ResponseEntity.ok(score);
             
         } catch (Exception e) {
@@ -88,7 +88,7 @@ public class StudentCodeController {
             String studentId = authentication.getName();
             log.info("Student {} submitting final answer for question {}", studentId, request.getQuestionId());
             
-            CodeExecutionResponse result = questionCodeCheckService.submitQuestionAnswer(
+            CodeExecutionResponse result = autoGradingService.submitQuestionAnswer(
                 request.getQuestionId(), 
                 request.getCode(), 
                 request.getLanguage(),

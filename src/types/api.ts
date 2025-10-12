@@ -243,6 +243,7 @@ export interface StudentAssignmentResponse {
   totalTestCases: number;
   totalQuestions: number;
   questions?: StudentQuestionResponse[];
+  programmingLanguages?: ProgrammingLanguage[];
   createdAt: string;
 }
 

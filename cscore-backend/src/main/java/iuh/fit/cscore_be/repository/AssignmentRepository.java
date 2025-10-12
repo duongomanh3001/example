@@ -44,4 +44,16 @@ public interface AssignmentRepository extends JpaRepository<Assignment, Long> {
     List<Assignment> findByCourseInAndIsActiveTrueOrderByCreatedAtDesc(List<Course> courses);
     
     Page<Assignment> findByCourseInAndIsActiveTrue(List<Course> courses, Pageable pageable);
+    
+    // Methods for enhanced functionality
+    List<Assignment> findByCourseIdAndIsActiveTrue(Long courseId);
+    
+    @Query("SELECT a FROM Assignment a WHERE a.course.id = :courseId AND a.isActive = true ORDER BY a.createdAt DESC")
+    List<Assignment> findByCourseIdOrderByCreatedAtDesc(@Param("courseId") Long courseId);
+    
+    @Query("SELECT COUNT(a) FROM Assignment a WHERE a.course.teacher.id = :teacherId AND a.isActive = true")
+    Long countByTeacherId(@Param("teacherId") Long teacherId);
+    
+    // Additional missing methods
+    List<Assignment> findByCourseOrderByCreatedAtDesc(Course course);
 }

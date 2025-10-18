@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { CodeRunner } from './CodeRunner';
+import CodeRunner from './CodeRunner';
+import { StudentQuestionResponse, TestCaseResponse } from '@/types/api';
 
 interface Question {
   id: number;
@@ -8,6 +9,19 @@ interface Question {
   type: string;
   testCases: TestCase[];
   maxScore: number;
+  description?: string;
+  questionType?: 'PROGRAMMING' | 'MULTIPLE_CHOICE' | 'ESSAY' | 'TRUE_FALSE';
+  points?: number;
+  orderIndex?: number;
+  publicTestCases?: TestCaseResponse[];
+  options?: any[];
+  isAnswered?: boolean;
+  userAnswer?: string;
+  selectedOptionIds?: number[];
+  starterCode?: string;
+  exampleTestCases?: TestCaseResponse[];
+  language?: string;
+  totalTestCases?: number;
 }
 
 interface TestCase {
@@ -389,12 +403,34 @@ export const AssignmentWorkspace: React.FC<AssignmentWorkspaceProps> = ({
               {/* Code Runner */}
               {currentQuestion.type === 'PROGRAMMING' && (
                 <CodeRunner
-                  questionId={currentQuestion.id}
-                  testCases={currentQuestion.testCases}
-                  onScoreUpdate={handleScoreUpdate}
-                  initialCode={currentCodes[currentQuestion.id] || ''}
-                  language="python"
-                  onCodeChange={(code) => handleCodeChange(currentQuestion.id, code)}
+                  question={{
+                    ...currentQuestion,
+                    description: currentQuestion.description || currentQuestion.content || '',
+                    questionType: (currentQuestion.questionType || currentQuestion.type) as 'PROGRAMMING',
+                    points: currentQuestion.points || currentQuestion.maxScore,
+                    orderIndex: currentQuestion.orderIndex || currentQuestionIndex,
+                    publicTestCases: (currentQuestion.publicTestCases || currentQuestion.testCases || []).map(tc => ({
+                      id: tc.id,
+                      input: tc.input,
+                      expectedOutput: tc.expectedOutput,
+                      testCode: tc.testCode || '',
+                      isHidden: tc.isHidden,
+                      points: ('weight' in tc ? tc.weight : 'points' in tc ? tc.points : 0) as number
+                    })),
+                    options: currentQuestion.options || [],
+                    isAnswered: currentQuestion.isAnswered || false
+                  }}
+                  answer={currentCodes[currentQuestion.id] || ''}
+                  onAnswerChange={(code) => handleCodeChange(currentQuestion.id, code)}
+                  onTestResults={(results) => {
+                    // Handle test results and update score
+                    if (results && results.score !== undefined) {
+                      handleScoreUpdate(currentQuestion.id, results.score, results.passed || false);
+                    }
+                  }}
+                  isChecking={false}
+                  setIsChecking={() => {}}
+                  testResults={null}
                 />
               )}
             </div>

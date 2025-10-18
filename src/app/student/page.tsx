@@ -64,11 +64,11 @@ function StudentDashboard() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-7xl px-4 py-6">
+      <div className="px-4 py-4">
         <div className="animate-pulse">
           <div className="h-6 bg-primary-200 rounded w-64 mb-2"></div>
-          <div className="h-4 bg-primary-200 rounded w-48 mb-6"></div>
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          <div className="h-4 bg-primary-200 rounded w-48 mb-4"></div>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {[1, 2, 3].map((i) => (
               <div key={i} className="h-48 bg-primary-200 rounded-lg"></div>
             ))}
@@ -80,7 +80,7 @@ function StudentDashboard() {
 
   if (error) {
     return (
-      <div className="mx-auto max-w-7xl px-4 py-6">
+      <div className="px-4 py-4">
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
           <p className="text-red-600">{error}</p>
         </div>
@@ -90,9 +90,9 @@ function StudentDashboard() {
 
   return (
     <StudentLayout>
-      <div>
+      <div className="px-4 py-4">
         {/* Welcome Section */}
-        <div className="mb-6">
+        <div className="mb-4">
           <h1 className="text-primary font-semibold text-xl">
             Chào mừng, {getUserDisplayName()}
           </h1>
@@ -102,16 +102,16 @@ function StudentDashboard() {
         </div>
 
         {/* Calendar and Upcoming Assignments Section */}
-        <div className="mb-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="mb-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2">
-            <h2 className="text-lg font-semibold text-primary mb-4">Lịch bài tập</h2>
+            <h2 className="text-base font-semibold text-primary mb-3">Lịch bài tập</h2>
             <Calendar 
               assignments={assignments}
               onDateClick={handleDateClick}
             />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-primary mb-4">Sắp tới hạn</h2>
+            <h2 className="text-base font-semibold text-primary mb-3">Sắp tới hạn</h2>
             <UpcomingAssignments 
               assignments={assignments}
               viewType="student"
@@ -121,11 +121,11 @@ function StudentDashboard() {
         </div>
 
         {/* Courses Section */}
-        <div className="mb-6">
-          <h2 className="text-lg font-semibold text-primary mb-6">Các khóa học của tôi</h2>
+        <div className="mb-4">
+          <h2 className="text-base font-semibold text-primary mb-4">Các khóa học của tôi</h2>
           
           {courses.length === 0 ? (
-            <div className="bg-primary-50 border border-primary-200 rounded-lg p-12 text-center">
+            <div className="bg-primary-50 border border-primary-200 rounded-lg p-8 text-center">
               <div className="text-6xl mb-4"></div>
               <h3 className="text-lg font-medium text-primary mb-2">Chưa có khóa học nào</h3>
               <p className="text-primary-400 mb-4">Bạn chưa đăng ký khóa học nào</p>
@@ -134,7 +134,7 @@ function StudentDashboard() {
               </button>
             </div>
           ) : (
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {courses.map((course) => (
                 <CourseCard 
                   key={course.id}

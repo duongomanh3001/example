@@ -20,6 +20,42 @@ public class StudentCodeController {
     private final AutoGradingService autoGradingService;
 
     /**
+     * Run student code and get output (without test cases)
+     * This allows students to test their code with custom input
+     */
+    @PostMapping("/run-question-code")
+    @PreAuthorize("hasRole('STUDENT')")
+    public ResponseEntity<CodeExecutionResponse> runQuestionCode(
+            @RequestBody QuestionCodeCheckRequest request,
+            Authentication authentication) {
+        
+        try {
+            String studentId = authentication.getName();
+            log.info("Student {} running code for question {} with input: {}", 
+                studentId, request.getQuestionId(), request.getInput() != null ? "yes" : "no");
+            
+            CodeExecutionResponse result = autoGradingService.runQuestionCode(
+                request.getQuestionId(), 
+                request.getCode(), 
+                request.getLanguage(),
+                studentId,
+                request.getInput()  
+            );
+            
+            return ResponseEntity.ok(result);
+            
+        } catch (Exception e) {
+            log.error("Error running question code", e);
+            
+            CodeExecutionResponse errorResponse = new CodeExecutionResponse();
+            errorResponse.setSuccess(false);
+            errorResponse.setError("Lỗi khi chạy code: " + e.getMessage());
+            
+            return ResponseEntity.ok(errorResponse);
+        }
+    }
+    
+    /**
      * Check student code against test cases for a specific question
      * This allows real-time feedback without submitting the entire assignment
      */

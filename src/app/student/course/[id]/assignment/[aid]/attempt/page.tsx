@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { withAuth } from "@/components/hoc/withAuth";
 import { Role } from "@/types/auth";
 import { use } from "react";
@@ -45,7 +46,26 @@ function AssignmentAttempt({ params }: Props) {
         
         // Initialize time left if timeLimit is set
         if (assignmentData.timeLimit) {
-          setTimeLeft(assignmentData.timeLimit * 60); // Convert minutes to seconds
+          const storageKey = `assignment_${assignmentId}_start_time`;
+          const storedStartTime = localStorage.getItem(storageKey);
+          
+          if (storedStartTime) {
+            // Calculate remaining time based on stored start time
+            const startTime = parseInt(storedStartTime);
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            const totalTime = assignmentData.timeLimit * 60;
+            const remaining = Math.max(0, totalTime - elapsed);
+            setTimeLeft(remaining);
+            
+            // Auto-submit if time is up
+            if (remaining === 0) {
+              handleAutoSubmit();
+            }
+          } else {
+            // First time starting the assignment - save start time
+            localStorage.setItem(storageKey, Date.now().toString());
+            setTimeLeft(assignmentData.timeLimit * 60);
+          }
         }
 
         // Initialize answers for all questions
@@ -89,6 +109,9 @@ function AssignmentAttempt({ params }: Props) {
 
   const handleAutoSubmit = async () => {
     if (assignment) {
+      // Clear the stored start time
+      const storageKey = `assignment_${assignment.id}_start_time`;
+      localStorage.removeItem(storageKey);
       await handleSubmit(true);
     }
   };
@@ -142,6 +165,10 @@ function AssignmentAttempt({ params }: Props) {
 
     try {
       setIsSubmitting(true);
+      
+      // Clear the stored start time when submitting
+      const storageKey = `assignment_${assignment.id}_start_time`;
+      localStorage.removeItem(storageKey);
 
       // Check if this is a programming assignment (has at least one PROGRAMMING question)
       const programmingQuestions = assignment.questions?.filter(q => q.questionType === 'PROGRAMMING') || [];
@@ -417,18 +444,6 @@ function AssignmentAttempt({ params }: Props) {
           <Link href={`/student/course/${course.id}/assignment/${assignment.id}`} className="hover:underline hover:text-primary">{assignment.title}</Link>
         </div>
 
-        {/* Timer */}
-        {timeLeft !== null && (
-          <div className="mb-4 p-3 bg-primary-50 border border-primary-200 rounded-lg">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-primary">Thời gian còn lại:</span>
-              <span className={`text-lg font-bold ${timeLeft < 300 ? 'text-red-600' : 'text-primary'}`}>
-                {formatTime(timeLeft)}
-              </span>
-            </div>
-          </div>
-        )}
-
         <div className="grid gap-6 grid-cols-1 lg:grid-cols-[1fr_300px]">
         {/* Left: Question and Answer Area */}
         <section className="rounded-md border bg-white">
@@ -457,28 +472,31 @@ function AssignmentAttempt({ params }: Props) {
             <div className="text-sm text-primary-600 mb-4 whitespace-pre-wrap">
               {currentQuestion.description}
             </div>
+          </div>
 
             {/* Answer Input based on question type */}
             {currentQuestion.questionType === 'PROGRAMMING' && (
-              <ProgrammingQuestionComponent
-                question={currentQuestion}
-                answer={answers[currentQuestion.id]?.answer || ''}
-                onAnswerChange={(code: string) => handleAnswerChange(currentQuestion.id, code)}
-                onTestResults={(result: any) => setTestResults(prev => ({
-                  ...prev,
-                  [currentQuestion.id]: result
-                }))}
-                isChecking={checkingQuestions[currentQuestion.id] || false}
-                setIsChecking={(checking: boolean) => setCheckingQuestions(prev => ({
-                  ...prev,
-                  [currentQuestion.id]: checking
-                }))}
-                testResults={testResults[currentQuestion.id]}
-              />
+              <div className="border-t border-gray-200">
+                <ProgrammingQuestionComponent
+                  question={currentQuestion}
+                  answer={answers[currentQuestion.id]?.answer || ''}
+                  onAnswerChange={(code: string) => handleAnswerChange(currentQuestion.id, code)}
+                  onTestResults={(result: any) => setTestResults(prev => ({
+                    ...prev,
+                    [currentQuestion.id]: result
+                  }))}
+                  isChecking={checkingQuestions[currentQuestion.id] || false}
+                  setIsChecking={(checking: boolean) => setCheckingQuestions(prev => ({
+                    ...prev,
+                    [currentQuestion.id]: checking
+                  }))}
+                  testResults={testResults[currentQuestion.id]}
+                />
+              </div>
             )}
 
             {currentQuestion.questionType === 'ESSAY' && (
-              <div>
+              <div className="px-4 pb-4">
                 <label className="block text-sm font-medium text-primary mb-2">
                   Câu trả lời của bạn:
                 </label>
@@ -492,7 +510,7 @@ function AssignmentAttempt({ params }: Props) {
             )}
 
             {(currentQuestion.questionType === 'MULTIPLE_CHOICE' || currentQuestion.questionType === 'TRUE_FALSE') && (
-              <div>
+              <div className="px-4 pb-4">
                 <label className="block text-sm font-medium text-primary mb-2">
                   Chọn đáp án:
                 </label>
@@ -514,7 +532,7 @@ function AssignmentAttempt({ params }: Props) {
             )}
 
             {/* Navigation */}
-            <div className="flex justify-between items-center mt-6 pt-4 border-t border-primary-200">
+            <div className="flex justify-between items-center px-4 pb-4 pt-4 border-t border-primary-200">
               <button
                 onClick={() => setCurrentQuestionIndex(prev => Math.max(0, prev - 1))}
                 disabled={currentQuestionIndex === 0}
@@ -535,12 +553,29 @@ function AssignmentAttempt({ params }: Props) {
                 Câu sau →
               </button>
             </div>
-          </div>
         </section>
 
         {/* Right: Question Navigator */}
         <aside className="rounded-md border border-primary-200 bg-white p-4 h-min">
-          <div className="font-semibold text-primary mb-3">Bảng câu hỏi</div>
+          {/* Timer */}
+          {timeLeft !== null && (
+            <div className="pb-4 mb-4 border-b border-primary-200">
+              <div className="flex items-center justify-center gap-3">
+                <div className="relative w-8 h-8">
+                  <Image
+                    src="/icon/hourglass.png"
+                    alt="Timer"
+                    width={32}
+                    height={32}
+                    className={`${timeLeft < 300 ? 'animate-pulse' : ''}`}
+                  />
+                </div>
+                <span className={`text-2xl font-bold ${timeLeft < 300 ? 'text-red-600' : 'text-primary'}`}>
+                  {formatTime(timeLeft)}
+                </span>
+              </div>
+            </div>
+          )}
           
           <div className="grid grid-cols-4 gap-2 mb-4">
             {questions.map((question, index) => {
@@ -589,35 +624,8 @@ function AssignmentAttempt({ params }: Props) {
             })}
           </div>
 
-          <div className="text-xs text-primary-600 mb-4">
-            <div className="flex items-center gap-2 mb-1">
-              <div className="w-3 h-3 bg-green-200 border border-green-400 rounded"></div>
-              <span>Test passed</span>
-            </div>
-            <div className="flex items-center gap-2 mb-1">
-              <div className="w-3 h-3 bg-red-200 border border-red-400 rounded"></div>
-              <span>Test failed</span>
-            </div>
-            <div className="flex items-center gap-2 mb-1">
-              <div className="w-3 h-3 bg-primary-100 border border-primary-300 rounded"></div>
-              <span>Đã trả lời</span>
-            </div>
-            <div className="flex items-center gap-2 mb-1">
-              <div className="w-3 h-3 bg-white border border-primary-300 rounded"></div>
-              <span>Chưa trả lời</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-primary rounded"></div>
-              <span>Đang làm</span>
-            </div>
-          </div>
 
           <div className="border-t border-primary-200 pt-4">
-            <div className="text-sm text-primary-600 mb-4">
-              <div>Đã trả lời: {Object.values(answers).filter(a => a.answer || (a.selectedOptions && a.selectedOptions.length > 0)).length}/{questions.length}</div>
-              <div>Test passed: {Object.values(testResults).filter(r => r.success).length}/{questions.filter(q => q.questionType === 'PROGRAMMING').length}</div>
-              <div>Tổng điểm: {questions.reduce((sum, q) => sum + q.points, 0)}</div>
-            </div>
             
             <button
               onClick={() => handleSubmit()}

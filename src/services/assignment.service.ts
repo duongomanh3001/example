@@ -224,7 +224,7 @@ class AssignmentServiceClass {
     const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 second timeout
     
     try {
-      const result = await apiClient.post<CodeExecutionResponse>(`/api/student/check-question-code`, {
+      const result = await apiClient.post<CodeExecutionResponse>(`/api/student/run-question-code`, {
         questionId,
         code,
         language,
@@ -232,7 +232,7 @@ class AssignmentServiceClass {
       }, { signal: controller.signal });
     
       // Add context message for run mode
-      if (result && input) {
+      if (result) {
         result.message = "Chạy code với input tùy chỉnh - Kết quả chỉ để tham khảo, không tính điểm.";
       }
       
@@ -419,6 +419,7 @@ class AssignmentServiceClass {
       courseName: assignment.courseName || assignment.course?.name || '',
       courseId: assignment.courseId || assignment.course?.id || 0,
       courseCode: assignment.courseCode || assignment.course?.code || '',
+      sectionId: assignment.sectionId, // Add section reference
       maxScore: assignment.maxScore || 100,
       timeLimit: assignment.timeLimit || 60,
       startTime: assignment.startTime,

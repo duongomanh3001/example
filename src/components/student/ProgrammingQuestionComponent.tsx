@@ -1,9 +1,7 @@
 "use client";
 
-import { useState, useCallback } from 'react';
-import { AssignmentService } from '@/services/assignment.service';
-import { StudentQuestionResponse, TestCaseResponse } from '@/types/api';
-import ImprovedCodeRunner from './ImprovedCodeRunner';
+import { StudentQuestionResponse } from '@/types/api';
+import CodeRunner from './CodeRunner';
 
 interface ProgrammingQuestionComponentProps {
   question: StudentQuestionResponse;
@@ -24,9 +22,9 @@ export default function ProgrammingQuestionComponent({
   setIsChecking,
   testResults
 }: ProgrammingQuestionComponentProps) {
-  // Use the new improved code runner
+  // Use the code runner component
   return (
-    <ImprovedCodeRunner
+    <CodeRunner
       question={question}
       answer={answer}
       onAnswerChange={onAnswerChange}

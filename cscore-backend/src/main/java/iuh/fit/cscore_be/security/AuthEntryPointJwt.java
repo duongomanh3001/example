@@ -22,8 +22,14 @@ public class AuthEntryPointJwt implements AuthenticationEntryPoint {
         
         logger.error("Unauthorized error: {}", authException.getMessage());
         
-        response.setContentType("application/json");
+        response.setContentType("application/json;charset=UTF-8");
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-        response.getWriter().write("{\"error\": \"Unauthorized\", \"message\": \"" + authException.getMessage() + "\"}");
+        
+        String jsonResponse = String.format(
+            "{\"error\": \"Unauthorized\", \"message\": \"Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.\", \"path\": \"%s\"}",
+            request.getRequestURI()
+        );
+        
+        response.getWriter().write(jsonResponse);
     }
 }

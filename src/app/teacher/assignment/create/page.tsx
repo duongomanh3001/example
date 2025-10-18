@@ -5,7 +5,8 @@ import { withAuth } from "@/components/hoc/withAuth";
 import { Role } from "@/types/auth";
 import { CourseService } from "@/services/course.service";
 import { AssignmentService } from "@/services/assignment.service";
-import { CourseResponse, CreateAssignmentRequest, TestCaseRequest, ProgrammingLanguage, QuestionType } from "@/types/api";
+import { SectionService } from "@/services/section.service";
+import { CourseResponse, CreateAssignmentRequest, TestCaseRequest, ProgrammingLanguage, QuestionType, SectionResponse } from "@/types/api";
 import MainLayout from "@/components/layouts/MainLayout";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -486,6 +487,7 @@ function QuestionEditor({
 function CreateAssignmentPage() {
   const router = useRouter();
   const [courses, setCourses] = useState<CourseResponse[]>([]);
+  const [sections, setSections] = useState<SectionResponse[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentStep, setCurrentStep] = useState(1); // 1: Basic Info, 2: Questions
   const [selectedQuestionIndex, setSelectedQuestionIndex] = useState<number | null>(null);
@@ -495,6 +497,7 @@ function CreateAssignmentPage() {
     description: '',
     type: 'EXERCISE' as 'EXERCISE' | 'EXAM' | 'PROJECT' | 'QUIZ',
     courseId: 0,
+    sectionId: undefined as number | undefined,
     maxScore: 100,
     timeLimit: 60,
     startTime: '',
@@ -517,6 +520,32 @@ function CreateAssignmentPage() {
     } catch (error) {
       console.error('Failed to fetch courses:', error);
       alert('Không thể tải danh sách khóa học');
+    }
+  };
+
+  const fetchSections = async (courseId: number) => {
+    try {
+      const courseSections = await SectionService.getSectionsByCourse(courseId);
+      console.log('📁 Loaded sections for course', courseId, ':', courseSections);
+      setSections(courseSections);
+    } catch (error) {
+      console.error('Failed to fetch sections:', error);
+      setSections([]);
+    }
+  };
+
+  const handleCourseChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const courseId = parseInt(e.target.value);
+    setFormData(prev => ({
+      ...prev,
+      courseId,
+      sectionId: undefined // Reset section when course changes
+    }));
+    
+    if (courseId > 0) {
+      fetchSections(courseId);
+    } else {
+      setSections([]);
     }
   };
 
@@ -721,12 +750,16 @@ function CreateAssignmentPage() {
     try {
       const totalScore = calculateTotalScore();
       
+      console.log('🔍 Form Data before submit:', formData);
+      console.log('🔍 Section ID:', formData.sectionId);
+      
       const requestData: CreateAssignmentRequest = {
         ...formData,
         maxScore: totalScore || formData.maxScore,
         startTime: formData.startTime || undefined,
         endTime: formData.endTime || undefined,
         programmingLanguages: formData.programmingLanguages.length > 0 ? formData.programmingLanguages : undefined,
+        sectionId: formData.sectionId, // Explicitly include sectionId
         questions: questions.map(q => ({
           title: q.title,
           description: q.description,
@@ -753,9 +786,15 @@ function CreateAssignmentPage() {
         }))
       };
 
-      await AssignmentService.createAssignment(requestData);
+      console.log('📤 Request Data to be sent:', requestData);
+      console.log('📤 Request Data sectionId:', requestData.sectionId);
+
+      const createdAssignment = await AssignmentService.createAssignment(requestData);
       alert('Bài tập đã được tạo thành công với ' + questions.length + ' câu hỏi!');
-      router.push('/teacher');
+      
+      // Redirect to course detail page with timestamp to force reload
+      const timestamp = Date.now();
+      router.push(`/teacher/course/${formData.courseId}?refresh=${timestamp}`);
     } catch (error) {
       console.error('Failed to create assignment:', error);
       alert('Có lỗi xảy ra khi tạo bài tập. Vui lòng thử lại.');
@@ -770,7 +809,9 @@ function CreateAssignmentPage() {
     setFormData(prev => ({
       ...prev,
       [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : 
-              type === 'number' ? parseInt(value) : value
+              type === 'number' ? parseInt(value) :
+              name === 'sectionId' ? (value === '' ? undefined : parseInt(value)) :
+              value
     }));
   };
 
@@ -869,7 +910,7 @@ function CreateAssignmentPage() {
                           name="courseId"
                           required
                           value={formData.courseId}
-                          onChange={handleInputChange}
+                          onChange={handleCourseChange}
                           className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#ff6a00]"
                         >
                           <option value={0}>Chọn khóa học</option>
@@ -880,6 +921,31 @@ function CreateAssignmentPage() {
                           ))}
                         </select>
                       </div>
+
+                      {/* Section dropdown */}
+                      {formData.courseId > 0 && (
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-2">
+                            Phân mục (tùy chọn)
+                          </label>
+                          <select
+                            name="sectionId"
+                            value={formData.sectionId || ''}
+                            onChange={handleInputChange}
+                            className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#ff6a00]"
+                          >
+                            <option value="">Không chọn phân mục (Chưa phân loại)</option>
+                            {sections.map((section) => (
+                              <option key={section.id} value={section.id}>
+                                📁 {section.name}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="text-xs text-slate-500 mt-1">
+                            Bạn có {sections.length} phân mục có sẵn. Bài tập sẽ được tổ chức theo phân mục.
+                          </p>
+                        </div>
+                      )}
                     </div>
 
                     <div className="mt-6">

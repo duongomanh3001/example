@@ -32,6 +32,8 @@ public class CreateAssignmentRequest {
     @NotNull(message = "ID khóa học không được trống")
     private Long courseId;
     
+    private Long sectionId; // Optional section ID for organizing assignments
+    
     @DecimalMin(value = "0.0", message = "Điểm tối đa phải lớn hơn hoặc bằng 0")
     @DecimalMax(value = "100.0", message = "Điểm tối đa không được vượt quá 100")
     private Double maxScore = 100.0;

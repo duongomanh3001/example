@@ -20,6 +20,7 @@ public class AssignmentResponse {
     private String courseName;
     private Long courseId; // Added
     private String courseCode; // Added
+    private Long sectionId; // Added for section reference
     private Double maxScore;
     private Integer timeLimit;
     private LocalDateTime startTime;
@@ -143,6 +144,11 @@ public class AssignmentResponse {
         
         public Builder updatedAt(LocalDateTime updatedAt) {
             response.updatedAt = updatedAt;
+            return this;
+        }
+        
+        public Builder sectionId(Long sectionId) {
+            response.sectionId = sectionId;
             return this;
         }
         

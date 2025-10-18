@@ -827,6 +827,45 @@ public class AutoGradingService {
     }
     
     /**
+     * Run question code without test cases (just execute and return output)
+     * This allows students to test their code with custom input
+     */
+    public CodeExecutionResponse runQuestionCode(Long questionId, String code, String language, String studentId, String input) {
+        try {
+            // Find the question (for logging purposes)
+            Question question = questionRepository.findById(questionId)
+                .orElseThrow(() -> new RuntimeException("Question not found with ID: " + questionId));
+            
+            log.info("Running question {} code for student {} with custom input", 
+                    questionId, studentId);
+            
+            // Execute code with input (without test cases)
+            CodeExecutionResponse result;
+            if (input != null && !input.isEmpty()) {
+                result = codeExecutionService.executeCodeWithInput(code, language, input);
+            } else {
+                result = codeExecutionService.executeCode(code, language);
+            }
+            
+            log.info("Question code run completed for question {} by student {}: success={}", 
+                    questionId, studentId, result.isSuccess());
+            
+            return result;
+            
+        } catch (Exception e) {
+            log.error("Error running question code for question {} by student {}: {}", 
+                    questionId, studentId, e.getMessage(), e);
+            
+            return CodeExecutionResponse.builder()
+                .success(false)
+                .error("Code execution failed: " + e.getMessage())
+                .language(language)
+                .executionTime(0L)
+                .build();
+        }
+    }
+    
+    /**
      * Check question code for real-time feedback
      */
     public CodeExecutionResponse checkQuestionCode(Long questionId, String code, String language, String input, String studentId) {

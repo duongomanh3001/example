@@ -96,6 +96,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Nếu không có token/user, chỉ set loading = false
       dispatch({ type: 'INITIALIZE_COMPLETE' });
     }
+
+    // Listen for unauthorized events (e.g., when token expires and api-client clears it)
+    const handleUnauthorized = () => {
+      dispatch({ type: 'SIGN_OUT' });
+    };
+
+    window.addEventListener('auth:unauthorized', handleUnauthorized);
+    return () => window.removeEventListener('auth:unauthorized', handleUnauthorized);
   }, []);
 
   const signIn = async (usernameOrEmail: string, password: string) => {

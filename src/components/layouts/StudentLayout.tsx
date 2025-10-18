@@ -3,7 +3,6 @@
 import { ReactNode } from "react";
 import Navbar from "@/components/common/Navbar";
 import Footer from "@/components/common/Footer";
-import StudentSidebar from "../student/StudentSidebar";
 
 interface StudentLayoutProps {
   children: ReactNode;
@@ -12,16 +11,13 @@ interface StudentLayoutProps {
 
 export default function StudentLayout({ children, className = "" }: StudentLayoutProps) {
   return (
-    <div className={`h-screen flex flex-col ${className}`} style={{ backgroundColor: 'rgb(187, 187, 187)' }}>
+    <div className={`min-h-screen flex flex-col ${className}`} style={{ backgroundColor: 'rgb(187, 187, 187)' }}>
       <Navbar />
-      <div className="flex flex-1 overflow-hidden">
-        <StudentSidebar />
-        <main className="flex-1 bg-white flex flex-col">
-          <div className="flex-1 p-6 overflow-auto">
-            {children}
-          </div>
-        </main>
-      </div>
+      <main className="flex-1 bg-white">
+        <div className="p-6">
+          {children}
+        </div>
+      </main>
       <Footer />
     </div>
   );

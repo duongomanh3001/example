@@ -3,6 +3,7 @@ package iuh.fit.cscore_be.controller;
 import iuh.fit.cscore_be.dto.request.MultiQuestionSubmissionRequest;
 import iuh.fit.cscore_be.dto.request.SubmissionRequest;
 import iuh.fit.cscore_be.dto.response.MultiQuestionSubmissionResponse;
+import iuh.fit.cscore_be.dto.response.SectionResponse;
 import iuh.fit.cscore_be.dto.response.StudentAssignmentResponse;
 import iuh.fit.cscore_be.dto.response.StudentDashboardResponse;
 import iuh.fit.cscore_be.dto.response.SubmissionResponse;
@@ -10,10 +11,12 @@ import iuh.fit.cscore_be.entity.User;
 import iuh.fit.cscore_be.security.JwtUtils;
 import iuh.fit.cscore_be.security.UserPrincipal;
 import iuh.fit.cscore_be.service.DashboardService;
+import iuh.fit.cscore_be.service.SectionService;
 import iuh.fit.cscore_be.service.StudentService;
 import iuh.fit.cscore_be.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -24,6 +27,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/student")
 @RequiredArgsConstructor
+@Slf4j
 @CrossOrigin(origins = {"http://localhost:3000", "http://localhost:3001"})
 public class StudentController {
 
@@ -31,6 +35,7 @@ public class StudentController {
     private final DashboardService dashboardService;
     private final UserService userService;
     private final JwtUtils jwtUtils;
+    private final SectionService sectionService;
 
     @GetMapping("/health")
     @PreAuthorize("hasRole('STUDENT') or hasRole('TEACHER') or hasRole('ADMIN')")
@@ -102,5 +107,17 @@ public class StudentController {
         
         SubmissionResponse submission = studentService.getSubmissionDetails(submissionId, student.getId());
         return ResponseEntity.ok(submission);
+    }
+    
+    // ======================== SECTIONS ========================
+    
+    @GetMapping("/courses/{courseId}/sections")
+    @PreAuthorize("hasRole('STUDENT') or hasRole('TEACHER') or hasRole('ADMIN')")
+    public ResponseEntity<List<SectionResponse>> getSectionsByCourse(
+            @PathVariable Long courseId,
+            @AuthenticationPrincipal UserPrincipal userPrincipal) {
+        log.info("Student {} getting sections for course {}", userPrincipal.getUsername(), courseId);
+        List<SectionResponse> sections = sectionService.getSectionsByCourse(courseId);
+        return ResponseEntity.ok(sections);
     }
 }

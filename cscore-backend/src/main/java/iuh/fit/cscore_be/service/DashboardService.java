@@ -429,6 +429,7 @@ public class DashboardService {
                 .type(assignment.getType())
                 .courseId(assignment.getCourse().getId())
                 .courseName(assignment.getCourse().getName())
+                .sectionId(assignment.getSection() != null ? assignment.getSection().getId() : null)
                 .maxScore(assignment.getMaxScore())
                 .timeLimit(assignment.getTimeLimit())
                 .startTime(assignment.getStartTime())
@@ -458,6 +459,7 @@ public class DashboardService {
                 .endTime(assignment.getEndTime())
                 .createdAt(assignment.getCreatedAt())
                 .totalQuestions((long) assignment.getQuestions().size())
+                .sectionId(assignment.getSection() != null ? assignment.getSection().getId() : null)
                 .build();
     }
     

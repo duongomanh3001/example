@@ -9,10 +9,18 @@ import { AssignmentService } from "@/services/assignment.service";
 import { DetailedAssignmentResponse } from "@/types/api";
 import MainLayout from "@/components/layouts/MainLayout";
 
-type Props = { params: Promise<{ id: string }> };
+type Props = { 
+  params: Promise<{ 
+    id: string;           // courseId
+    assignmentId: string; // assignmentId
+  }> 
+};
 
-function AssignmentDetails({ params }: Props) {
+function TeacherAssignmentDetails({ params }: Props) {
   const resolvedParams = use(params);
+  const courseId = resolvedParams.id;
+  const assignmentId = resolvedParams.assignmentId;
+  
   const [assignment, setAssignment] = useState<DetailedAssignmentResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -21,9 +29,7 @@ function AssignmentDetails({ params }: Props) {
     try {
       setLoading(true);
       
-      const assignmentId = parseInt(resolvedParams.id);
-      
-      const assignmentData = await AssignmentService.getAssignmentById(assignmentId);
+      const assignmentData = await AssignmentService.getAssignmentById(parseInt(assignmentId));
       setAssignment(assignmentData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Có lỗi xảy ra khi tải dữ liệu');
@@ -35,7 +41,7 @@ function AssignmentDetails({ params }: Props) {
 
   useEffect(() => {
     fetchData();
-  }, [resolvedParams.id]);
+  }, [assignmentId]);
 
   const handleToggleStatus = async () => {
     if (!assignment) return;
@@ -57,7 +63,7 @@ function AssignmentDetails({ params }: Props) {
     try {
       await AssignmentService.deleteAssignment(assignment.id);
       alert('Đã xóa bài tập thành công!');
-      window.location.href = '/teacher';
+      window.location.href = `/teacher/course/${courseId}`;
     } catch (err) {
       alert('Có lỗi xảy ra khi xóa bài tập');
       console.error('Failed to delete assignment:', err);
@@ -90,7 +96,9 @@ function AssignmentDetails({ params }: Props) {
           <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
             <p className="text-red-600">{error || 'Không tìm thấy bài tập'}</p>
           </div>
-          <Link className="text-blue-600 hover:underline" href="/teacher">← Quay lại danh sách bài tập</Link>
+          <Link className="text-blue-600 hover:underline" href={`/teacher/course/${courseId}`}>
+            ← Quay lại khóa học
+          </Link>
         </div>
       </MainLayout>
     );
@@ -103,10 +111,10 @@ function AssignmentDetails({ params }: Props) {
         <div className="mb-6">
           <div className="flex items-center gap-4 mb-2">
             <Link 
-              href="/teacher" 
+              href={`/teacher/course/${courseId}`}
               className="text-slate-600 hover:text-slate-900"
             >
-              ← Quay lại
+              ← Quay lại khóa học
             </Link>
           </div>
           <h1 className="text-[#ff6a00] font-semibold text-xl">{assignment.title}</h1>
@@ -308,6 +316,6 @@ function AssignmentDetails({ params }: Props) {
   );
 }
 
-export default withAuth(AssignmentDetails, {
+export default withAuth(TeacherAssignmentDetails, {
   requiredRoles: [Role.TEACHER],
 });

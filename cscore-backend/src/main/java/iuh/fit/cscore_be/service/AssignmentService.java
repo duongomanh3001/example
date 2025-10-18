@@ -228,6 +228,7 @@ public class AssignmentService {
         Long pendingCount = assignmentRepository.countPendingSubmissionsByAssignment(assignment);
         
         Long totalQuestions = (long) assignment.getQuestions().size();
+        Long sectionId = assignment.getSection() != null ? assignment.getSection().getId() : null;
         
         return new AssignmentResponse(
             assignment.getId(),
@@ -237,6 +238,7 @@ public class AssignmentService {
             assignment.getCourse().getName(),
             assignment.getCourse().getId(),
             assignment.getCourse().getCode(),
+            sectionId,
             assignment.getMaxScore(),
             assignment.getTimeLimit(),
             assignment.getStartTime(),

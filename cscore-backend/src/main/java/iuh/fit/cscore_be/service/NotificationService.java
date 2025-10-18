@@ -312,7 +312,7 @@ public class NotificationService {
         
         notification.setRelatedEntityId(assignmentId);
         notification.setRelatedEntityType("ASSIGNMENT");
-        notification.setActionUrl("/teacher/assignment/" + assignmentId);
+        notification.setActionUrl("/teacher/course/" + course.getId() + "/assignment/" + assignmentId);
         
         notificationRepository.save(notification);
         
@@ -341,7 +341,7 @@ public class NotificationService {
             
             notification.setRelatedEntityId(assignmentId);
             notification.setRelatedEntityType("ASSIGNMENT");
-            notification.setActionUrl("/student/course/" + course.getId() + "/assignment/" + assignmentId);
+            notification.setActionUrl("/student/assignment/" + assignmentId);
             
             notifications.add(notification);
         }
@@ -365,7 +365,7 @@ public class NotificationService {
         
         notification.setRelatedEntityId(assignmentId);
         notification.setRelatedEntityType("ASSIGNMENT");
-        notification.setActionUrl("/student/course/" + getCourseIdFromAssignmentId(assignmentId) + "/assignment/" + assignmentId);
+        notification.setActionUrl("/student/assignment/" + assignmentId);
         
         notificationRepository.save(notification);
         
@@ -405,7 +405,7 @@ public class NotificationService {
                 
                 notification.setRelatedEntityId(assignment.getId());
                 notification.setRelatedEntityType("Assignment");
-                notification.setActionUrl("/student/assignments/" + assignment.getId());
+                notification.setActionUrl("/student/assignment/" + assignment.getId());
                 
                 notifications.add(notification);
             }

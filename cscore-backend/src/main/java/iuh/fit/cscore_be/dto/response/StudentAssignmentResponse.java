@@ -21,6 +21,7 @@ public class StudentAssignmentResponse {
     private AssignmentType type;
     private Long courseId;
     private String courseName;
+    private Long sectionId; // Add section reference for organizing assignments
     private Double maxScore;
     private Integer timeLimit;
     private LocalDateTime startTime;
@@ -81,6 +82,11 @@ public class StudentAssignmentResponse {
         
         public Builder courseTitle(String courseTitle) {
             response.courseName = courseTitle; // Map courseTitle to courseName
+            return this;
+        }
+        
+        public Builder sectionId(Long sectionId) {
+            response.sectionId = sectionId;
             return this;
         }
         

@@ -221,17 +221,31 @@ public class CodeExecutionService {
                                                           List<TestCase> testCases, 
                                                           Submission submission, 
                                                           Question question) {
-        // If question parameter is provided, we need code wrapping - fall back to local
-        if (question != null) {
-            log.info("Question parameter provided, falling back to local execution for code wrapping support");
-            return executeWithTestCasesLocal(code, language, testCases, submission, question);
-        }
-        
         try {
-            return performJobeTestCaseExecution(code, language, testCases, submission);
+            // Check if any test case uses testCode mode
+            boolean hasTestCode = testCases.stream()
+                .anyMatch(tc -> tc.getTestCode() != null && !tc.getTestCode().trim().isEmpty());
+            
+            // Only wrap code if question provided AND test cases don't have testCode
+            String executableCode = code;
+            if (question != null && !hasTestCode) {
+                log.info("Question parameter provided, wrapping code for Jobe execution (input/output mode)");
+                executableCode = codeWrapperService.wrapFunctionCode(code, question, language, testCases);
+                log.debug("Code wrapped for Jobe execution");
+            } else if (hasTestCode) {
+                log.info("Test cases use testCode mode, skipping wrapper - will combine with test code directly");
+            }
+            
+            return performJobeTestCaseExecution(executableCode, language, testCases, submission);
         } catch (Exception e) {
-            log.warn("Jobe execution with test cases failed, falling back to local: {}", e.getMessage());
-            return executeWithTestCasesLocal(code, language, testCases, submission, question);
+            log.error("Jobe execution with test cases failed: {}", e.getMessage());
+            CodeExecutionResponse response = new CodeExecutionResponse();
+            response.setSuccess(false);
+            response.setError("Lỗi khi thực thi code trên Jobe server: " + e.getMessage());
+            response.setLanguage(language);
+            response.setTotalTests(testCases.size());
+            response.setPassedTests(0);
+            return response;
         }
     }
 
@@ -315,11 +329,17 @@ public class CodeExecutionService {
         try {
             log.info("Executing code with {} test cases locally - Language: {}", testCases.size(), language);
             
-            // Wrap code if question provided
+            // Check if any test case uses testCode mode
+            boolean hasTestCode = testCases.stream()
+                .anyMatch(tc -> tc.getTestCode() != null && !tc.getTestCode().trim().isEmpty());
+            
+            // Only wrap code if question provided AND test cases don't have testCode
             String executableCode = code;
-            if (question != null) {
+            if (question != null && !hasTestCode) {
                 executableCode = codeWrapperService.wrapFunctionCode(code, question, language, testCases);
-                log.debug("Code wrapped for execution");
+                log.debug("Code wrapped for execution (input/output mode)");
+            } else if (hasTestCode) {
+                log.debug("Test cases use testCode mode, skipping wrapper");
             }
             
             // Execute each test case
@@ -401,6 +421,8 @@ public class CodeExecutionService {
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("run_spec", createJobeRequest(code, language, input));
         
+        log.debug("Sending to Jobe - Language: {}, Input: {}, Code length: {}", language, input, code.length());
+        
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.set("X-API-KEY", jobeApiKey);
@@ -408,6 +430,8 @@ public class CodeExecutionService {
         
         String url = jobeServerUrl + "/jobe/index.php/restapi/runs";
         ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
+        
+        log.debug("Jobe raw response: {}", response.getBody());
         
         return parseJobeResponse(response.getBody(), language);
     }
@@ -475,6 +499,12 @@ public class CodeExecutionService {
         Map<String, Object> parameters = new HashMap<>();
         parameters.put("memorylimit", (int)(MEMORY_LIMIT / (1024 * 1024))); // Convert to MB
         parameters.put("cputime", EXECUTION_TIMEOUT);
+        
+        // Add compile arguments for C/C++ to link math library
+        if (language.equalsIgnoreCase("c") || language.equalsIgnoreCase("cpp") || language.equalsIgnoreCase("c++")) {
+            parameters.put("compileargs", java.util.Arrays.asList("-lm"));
+        }
+        
         runSpec.put("parameters", parameters);
         
         return runSpec;
@@ -530,9 +560,27 @@ public class CodeExecutionService {
     private TestResultResponse executeTestCaseViaJobe(String code, String language, TestCase testCase) throws Exception {
         long startTime = System.currentTimeMillis();
         
-        CodeExecutionResponse executionResult = performJobeExecution(code, language, testCase.getInput());
+        // Check if test case uses testCode (code snippet mode) or input/output mode
+        String codeToExecute = code;
+        String inputToUse = testCase.getInput();
+        
+        if (testCase.getTestCode() != null && !testCase.getTestCode().trim().isEmpty()) {
+            log.debug("Test case {} uses testCode mode, combining student code with test code", testCase.getId());
+            codeToExecute = combineCodeWithTestCode(code, testCase.getTestCode(), language);
+            inputToUse = null; // No input needed when using testCode
+            log.debug("Combined code length: {}", codeToExecute.length());
+        } else {
+            log.debug("Test case {} uses input/output mode with input: {}", testCase.getId(), testCase.getInput());
+        }
+        
+        log.debug("Code to execute (first 200 chars): {}", codeToExecute.substring(0, Math.min(200, codeToExecute.length())));
+        
+        CodeExecutionResponse executionResult = performJobeExecution(codeToExecute, language, inputToUse);
         
         long executionTime = System.currentTimeMillis() - startTime;
+        
+        log.debug("Jobe execution result - Success: {}, Output: '{}', Error: '{}'", 
+                  executionResult.isSuccess(), executionResult.getOutput(), executionResult.getError());
         
         TestResultResponse testResult = new TestResultResponse();
         testResult.setTestCaseId(testCase.getId());
@@ -550,6 +598,8 @@ public class CodeExecutionService {
             
             if (!passed) {
                 testResult.setErrorMessage("Kết quả không khớp với expected output");
+                log.warn("Output mismatch - Expected: '{}', Actual: '{}'", 
+                         testCase.getExpectedOutput(), executionResult.getOutput());
             }
         }
         
@@ -768,74 +818,73 @@ public class CodeExecutionService {
     private String executeCodeWithInputLocal(String code, String language, String input, 
                                             Path workDir, long timeoutMs) throws Exception {
         Process process = null;
-        
         try {
             switch (language.toLowerCase()) {
                 case "java":
                     // Compile and run Java
                     Path javaFile = workDir.resolve("Main.java");
                     Files.write(javaFile, code.getBytes());
-                    
+
                     Process compileProcess = new ProcessBuilder("javac", javaFile.toString())
                             .directory(workDir.toFile()).start();
                     compileProcess.waitFor(COMPILATION_TIMEOUT, TimeUnit.SECONDS);
-                    
+
                     if (compileProcess.exitValue() != 0) {
                         throw new RuntimeException("Compilation failed");
                     }
-                    
+
                     process = new ProcessBuilder("java", "-cp", workDir.toString(), "Main")
                             .directory(workDir.toFile()).start();
                     break;
-                    
+
                 case "python":
                     Path pythonFile = workDir.resolve("main.py");
                     Files.write(pythonFile, code.getBytes());
                     process = new ProcessBuilder("python", pythonFile.toString())
                             .directory(workDir.toFile()).start();
                     break;
-                    
+
                 case "cpp":
                 case "c++":
                     Path cppFile = workDir.resolve("main.cpp");
                     Files.write(cppFile, code.getBytes());
-                    
+
                     Path cppExec = workDir.resolve("main");
                     Process cppCompile = new ProcessBuilder("g++", "-o", cppExec.toString(), 
                             cppFile.toString(), "-lm", "-std=c++17")
                             .directory(workDir.toFile()).start();
                     cppCompile.waitFor(COMPILATION_TIMEOUT, TimeUnit.SECONDS);
-                    
+
                     if (cppCompile.exitValue() != 0) {
                         throw new RuntimeException("Compilation failed");
                     }
-                    
+
                     process = new ProcessBuilder(cppExec.toString())
                             .directory(workDir.toFile()).start();
                     break;
-                    
+
                 case "c":
                     Path cFile = workDir.resolve("main.c");
                     Files.write(cFile, code.getBytes());
-                    
+
                     Path cExec = workDir.resolve("main");
                     Process cCompile = new ProcessBuilder("gcc", "-o", cExec.toString(), 
                             cFile.toString(), "-lm", "-std=c99")
                             .directory(workDir.toFile()).start();
                     cCompile.waitFor(COMPILATION_TIMEOUT, TimeUnit.SECONDS);
-                    
+
                     if (cCompile.exitValue() != 0) {
                         throw new RuntimeException("Compilation failed");
                     }
-                    
+
                     process = new ProcessBuilder(cExec.toString())
                             .directory(workDir.toFile()).start();
                     break;
-                    
+
                 default:
                     throw new RuntimeException("Unsupported language: " + language);
             }
-            
+
             // Send input to process
             if (input != null && !input.trim().isEmpty()) {
                 try (PrintWriter writer = new PrintWriter(process.getOutputStream())) {
@@ -843,21 +892,21 @@ public class CodeExecutionService {
                     writer.flush();
                 }
             }
-            
+
             // Wait for completion with timeout
             boolean finished = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS);
             if (!finished) {
                 process.destroyForcibly();
                 throw new RuntimeException("Execution timeout");
             }
-            
+
             if (process.exitValue() != 0) {
                 String error = readProcessOutput(process.getErrorStream());
                 throw new RuntimeException("Runtime error: " + error);
             }
-            
+
             return readProcessOutput(process.getInputStream());
-            
+
         } finally {
             if (process != null && process.isAlive()) {
                 process.destroyForcibly();
@@ -878,7 +927,17 @@ public class CodeExecutionService {
             Path workDir = Paths.get(TEMP_DIR, "cscore_test", uniqueId);
             Files.createDirectories(workDir);
             
-            String actualOutput = executeCodeWithInputLocal(code, language, testCase.getInput(), 
+            // Check if test case uses testCode or input/output mode
+            String codeToExecute = code;
+            String inputToUse = testCase.getInput();
+            
+            if (testCase.getTestCode() != null && !testCase.getTestCode().trim().isEmpty()) {
+                log.debug("Test case {} uses testCode mode, combining code with test", testCase.getId());
+                codeToExecute = combineCodeWithTestCode(code, testCase.getTestCode(), language);
+                inputToUse = null; // No input when using testCode
+            }
+            
+            String actualOutput = executeCodeWithInputLocal(codeToExecute, language, inputToUse, 
                                                            workDir, EXECUTION_TIMEOUT * 1000);
             
             long executionTime = System.currentTimeMillis() - startTime;
@@ -944,6 +1003,88 @@ public class CodeExecutionService {
         String normalizedActual = actual.trim().replaceAll("\\s+", " ");
         
         return normalizedExpected.equals(normalizedActual);
+    }
+    
+    /**
+     * Combine student code with test code to create a complete executable program
+     */
+    private String combineCodeWithTestCode(String studentCode, String testCode, String language) {
+        log.debug("Combining student code with test code for language: {}", language);
+        
+        switch (language.toLowerCase()) {
+            case "c":
+            case "cpp":
+            case "c++":
+                return combineCppCodeWithTest(studentCode, testCode);
+            case "java":
+                return combineJavaCodeWithTest(studentCode, testCode);
+            case "python":
+                return combinePythonCodeWithTest(studentCode, testCode);
+            default:
+                log.warn("Unsupported language for code combination: {}", language);
+                return studentCode + "\n\n" + testCode;
+        }
+    }
+    
+    private String combineCppCodeWithTest(String studentCode, String testCode) {
+        // For C/C++, combine student function with test main
+        StringBuilder combined = new StringBuilder();
+        
+        // Add necessary headers
+        combined.append("#include <stdio.h>\n");
+        combined.append("#include <stdlib.h>\n");
+        combined.append("#include <string.h>\n");
+        combined.append("#include <math.h>\n\n");
+        
+        // Add student code (function implementation)
+        combined.append("// Student code\n");
+        combined.append(studentCode.trim());
+        combined.append("\n\n");
+        
+        // Add test code (main function with test cases)
+        combined.append("// Test code\n");
+        combined.append("int main() {\n");
+        combined.append(testCode.trim());
+        combined.append("\n    return 0;\n");
+        combined.append("}\n");
+        
+        return combined.toString();
+    }
+    
+    private String combineJavaCodeWithTest(String studentCode, String testCode) {
+        // For Java, wrap both in a class
+        StringBuilder combined = new StringBuilder();
+        
+        combined.append("import java.util.*;\n\n");
+        combined.append("public class Solution {\n");
+        combined.append("    // Student code\n");
+        combined.append("    ");
+        combined.append(studentCode.trim().replaceAll("\n", "\n    "));
+        combined.append("\n\n");
+        combined.append("    // Test code\n");
+        combined.append("    public static void main(String[] args) {\n");
+        combined.append("        ");
+        combined.append(testCode.trim().replaceAll("\n", "\n        "));
+        combined.append("\n    }\n");
+        combined.append("}\n");
+        
+        return combined.toString();
+    }
+    
+    private String combinePythonCodeWithTest(String studentCode, String testCode) {
+        // For Python, simply combine with proper indentation
+        StringBuilder combined = new StringBuilder();
+        
+        combined.append("# Student code\n");
+        combined.append(studentCode.trim());
+        combined.append("\n\n");
+        combined.append("# Test code\n");
+        combined.append("if __name__ == '__main__':\n");
+        combined.append("    ");
+        combined.append(testCode.trim().replaceAll("\n", "\n    "));
+        combined.append("\n");
+        
+        return combined.toString();
     }
 
     private TestResultResponse createFailedTestResult(TestCase testCase, String errorMessage) {

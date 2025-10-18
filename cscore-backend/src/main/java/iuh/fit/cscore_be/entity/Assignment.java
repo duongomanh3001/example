@@ -43,6 +43,11 @@ public class Assignment {
     @JsonIgnore
     private Course course;
     
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "section_id")
+    @JsonIgnore
+    private Section section;
+    
     @Column(name = "max_score")
     private Double maxScore = 100.0;
     

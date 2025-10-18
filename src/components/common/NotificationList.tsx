@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { 
   Bell, 
   Filter, 
@@ -26,6 +27,7 @@ interface NotificationListProps {
 }
 
 export const NotificationList: React.FC<NotificationListProps> = ({ className }) => {
+  const router = useRouter();
   const {
     notifications,
     stats,
@@ -143,12 +145,14 @@ export const NotificationList: React.FC<NotificationListProps> = ({ className })
   };
 
   const handleNotificationClick = async (notification: Notification) => {
+    // Mark as read if not already read
     if (!notification.isRead) {
       await markAsRead([notification.id]);
     }
     
+    // Navigate to the action URL if it exists
     if (notification.actionUrl) {
-      window.location.href = notification.actionUrl;
+      router.push(notification.actionUrl);
     }
   };
 

@@ -8,6 +8,32 @@ export enum ProgrammingLanguage {
 
 export type QuestionType = 'PROGRAMMING' | 'MULTIPLE_CHOICE' | 'ESSAY' | 'TRUE_FALSE';
 
+// Section types
+export interface SectionResponse {
+  id: number;
+  courseId: number;
+  name: string;
+  description?: string;
+  orderIndex: number;
+  isCollapsed: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateSectionRequest {
+  courseId: number;
+  name: string;
+  description?: string;
+  orderIndex: number;
+}
+
+export interface UpdateSectionRequest {
+  name?: string;
+  description?: string;
+  orderIndex?: number;
+  isCollapsed?: boolean;
+}
+
 export interface CourseResponse {
   id: number;
   name: string;
@@ -79,6 +105,7 @@ export interface CreateAssignmentRequest {
   requirements?: string;
   type: 'EXERCISE' | 'EXAM' | 'PROJECT' | 'QUIZ';
   courseId: number;
+  sectionId?: number; // Add section reference for organizing assignments
   maxScore: number;
   timeLimit: number;
   startTime?: string;
@@ -167,6 +194,7 @@ export interface AssignmentResponse {
   totalQuestions: number;
   createdAt: string;
   updatedAt: string;
+  sectionId?: number; // Add section reference
 }
 
 export interface DetailedAssignmentResponse extends AssignmentResponse {
@@ -230,6 +258,7 @@ export interface StudentAssignmentResponse {
   type: 'EXERCISE' | 'EXAM' | 'PROJECT' | 'QUIZ';
   courseId: number;
   courseName: string;
+  sectionId?: number; // Add section reference for organizing assignments
   maxScore: number;
   timeLimit: number;
   startTime?: string;

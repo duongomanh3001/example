@@ -22,6 +22,20 @@ class ApiClient {
     return null;
   }
 
+  private handleUnauthorized(): void {
+    if (typeof window !== 'undefined') {
+      // Clear authentication data
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      
+      // Dispatch custom event to notify other parts of the app
+      window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+      
+      // Redirect to login page
+      window.location.href = '/login';
+    }
+  }
+
   async request<T>(
     endpoint: string,
     options: RequestInit = {}
@@ -53,6 +67,8 @@ class ApiClient {
           case 400:
             throw new Error(errorMessage || 'Dữ liệu không hợp lệ. Vui lòng kiểm tra lại thông tin đã nhập.');
           case 401:
+            // Handle unauthorized - token expired or invalid
+            this.handleUnauthorized();
             throw new Error(errorMessage || 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
           case 403:
             throw new Error(errorMessage || 'Bạn không có quyền thực hiện hành động này.');

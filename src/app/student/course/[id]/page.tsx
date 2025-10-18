@@ -7,7 +7,8 @@ import { Role } from "@/types/auth";
 import { use } from "react";
 import { CourseService } from "@/services/course.service";
 import { AssignmentService } from "@/services/assignment.service";
-import { CourseResponse, StudentAssignmentResponse } from "@/types/api";
+import { SectionService } from "@/services/section.service";
+import { CourseResponse, StudentAssignmentResponse, SectionResponse } from "@/types/api";
 import MainLayout from "@/components/layouts/MainLayout";
 
 type Props = { params: Promise<{ id: string }> };
@@ -16,21 +17,21 @@ function CourseDetails({ params }: Props) {
   const resolvedParams = use(params);
   const [course, setCourse] = useState<CourseResponse | null>(null);
   const [assignments, setAssignments] = useState<StudentAssignmentResponse[]>([]);
+  const [sections, setSections] = useState<SectionResponse[]>([]);
+  const [collapsedSections, setCollapsedSections] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = async () => {
     try {
       setLoading(true);
+      setError(null); // Clear previous errors
       
       // Fetch course details and assignments
       const courseId = parseInt(resolvedParams.id);
       
-      // Fetch enrolled courses and assignments for students
-      const [enrolledCourses, allAssignments] = await Promise.all([
-        CourseService.getEnrolledCourses(),
-        AssignmentService.getAssignmentsForStudent(),
-      ]);
+      // Fetch enrolled courses first
+      const enrolledCourses = await CourseService.getEnrolledCourses();
 
       // Find the specific course from enrolled courses
       const courseData = enrolledCourses.find(c => c.id === courseId);
@@ -38,13 +39,46 @@ function CourseDetails({ params }: Props) {
         throw new Error('Không tìm thấy khóa học hoặc bạn chưa đăng ký khóa học này');
       }
 
-      // Filter assignments for this specific course
-      const courseAssignments = allAssignments.filter(assignment => 
-        assignment.courseName === courseData.name
-      );
-
       setCourse(courseData);
-      setAssignments(courseAssignments);
+
+      // Fetch sections for this course using student endpoint
+      try {
+        const courseSections = await fetch(`http://localhost:8086/api/student/courses/${courseId}/sections`, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+            'Content-Type': 'application/json'
+          }
+        }).then(res => {
+          if (!res.ok) throw new Error('Failed to fetch sections');
+          return res.json();
+        });
+        setSections(courseSections);
+        
+        // Initialize collapsed state from section data
+        const initialCollapsed = new Set<number>();
+        courseSections.forEach((section: SectionResponse) => {
+          if (section.isCollapsed) {
+            initialCollapsed.add(section.id);
+          }
+        });
+        setCollapsedSections(initialCollapsed);
+      } catch (sectionError) {
+        console.error('Failed to fetch sections:', sectionError);
+        setSections([]);
+      }
+
+      // Fetch assignments for this specific course (separate to handle errors better)
+      try {
+        const allAssignments = await AssignmentService.getAssignmentsForStudent();
+        const courseAssignments = allAssignments.filter(assignment => 
+          assignment.courseName === courseData.name
+        );
+        setAssignments(courseAssignments);
+      } catch (assignmentError) {
+        console.error('Failed to fetch assignments:', assignmentError);
+        // Don't fail the whole page if assignments fail to load
+        setAssignments([]);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Có lỗi xảy ra khi tải dữ liệu');
       console.error('Failed to fetch course data:', err);
@@ -57,16 +91,90 @@ function CourseDetails({ params }: Props) {
     fetchData();
   }, [resolvedParams.id]);
 
+  const toggleSectionCollapse = (sectionId: number) => {
+    setCollapsedSections(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(sectionId)) {
+        newSet.delete(sectionId);
+      } else {
+        newSet.add(sectionId);
+      }
+      return newSet;
+    });
+  };
+
+    const renderAssignmentCard = (assignment: StudentAssignmentResponse) => (
+    <Link
+      href={`/student/assignment/${assignment.id}`}
+      key={assignment.id}
+      className="block bg-white border border-slate-200 rounded-lg p-4 hover:shadow-md transition-all hover:border-slate-300"
+    >
+      <div className="flex justify-between items-start">
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-2">
+            <h3 className="font-semibold text-slate-900 text-base">{assignment.title}</h3>
+            {assignment.isSubmitted && (
+              <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium">
+                Đã nộp
+              </span>
+            )}
+          </div>
+
+          {assignment.description && (
+            <p className="text-sm text-slate-600 mb-3">
+              {assignment.description}
+            </p>
+          )}
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs text-slate-600">
+            <div>
+              <span className="font-medium">Điểm tối đa:</span>{" "}
+              {assignment.maxScore}
+            </div>
+            <div>
+              <span className="font-medium">Thời gian:</span>{" "}
+              {assignment.timeLimit} phút
+            </div>
+            <div>
+              <span className="font-medium">Câu hỏi:</span>{" "}
+              {assignment.totalQuestions}
+            </div>
+            {assignment.currentScore !== undefined && (
+              <div>
+                <span className="font-medium">Điểm của bạn:</span>{" "}
+                <span className="text-green-600 font-semibold">{assignment.currentScore}</span>
+              </div>
+            )}
+          </div>
+
+          {(assignment.startTime || assignment.endTime) && (
+            <div className="mt-3 text-xs text-slate-600 space-y-1">
+              {assignment.startTime && (
+                <div>
+                  <span className="font-medium">Bắt đầu:</span>{" "}
+                  {new Date(assignment.startTime).toLocaleString("vi-VN")}
+                </div>
+              )}
+              {assignment.endTime && (
+                <div>
+                  <span className="font-medium">Kết thúc:</span>{" "}
+                  {new Date(assignment.endTime).toLocaleString("vi-VN")}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </Link>
+  );
+
   if (loading) {
     return (
       <MainLayout>
-        <div className="mx-auto max-w-7xl px-4 py-6">
+        <div className="px-6 py-4">
           <div className="animate-pulse">
-            <div className="h-6 bg-primary-200 rounded w-64 mb-6"></div>
-            <div className="grid gap-6 md:grid-cols-[240px_1fr]">
-              <div className="h-64 bg-primary-200 rounded-lg"></div>
-              <div className="h-64 bg-primary-200 rounded-lg"></div>
-            </div>
+            <div className="h-6 bg-slate-200 rounded w-64 mb-6"></div>
+            <div className="h-64 bg-slate-200 rounded-lg"></div>
           </div>
         </div>
       </MainLayout>
@@ -76,11 +184,11 @@ function CourseDetails({ params }: Props) {
   if (error || !course) {
     return (
       <MainLayout>
-        <div className="mx-auto max-w-7xl px-4 py-10">
+        <div className="px-6 py-4">
           <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
             <p className="text-red-600">{error || 'Không tìm thấy khóa học'}</p>
           </div>
-          <Link className="text-primary hover:underline" href="/student">← Quay lại danh sách khóa học</Link>
+          <Link className="text-[#ff6a00] hover:underline" href="/student">← Quay lại danh sách khóa học</Link>
         </div>
       </MainLayout>
     );
@@ -88,97 +196,125 @@ function CourseDetails({ params }: Props) {
 
   return (
     <MainLayout>
-      <div className="mx-auto max-w-7xl px-4 py-6">
+      <div className="px-6 py-4">
         <div className="mb-4">
-          <h1 className="text-primary font-semibold text-xl">{course.name}</h1>
-          <p className="text-primary-400 text-sm mt-1">{course.code} - {course.description}</p>
+          <h1 className="text-slate-900 font-semibold text-2xl">{course.name}</h1>
+          <p className="text-slate-600 text-sm mt-1">{course.code} - {course.description}</p>
         </div>
 
-      <div className="mt-4 grid gap-6 grid-cols-1 md:grid-cols-[240px_1fr]">
-        {/* Left sidebar */}
-        <aside className="rounded-md border border-primary-200 bg-white">
-          <div className="p-4 border-b border-primary-100 text-sm font-medium text-primary">
-            {course.name}
-          </div>
-          <nav className="text-sm">
-            <a className="block px-4 py-2 bg-primary text-white" href="#">Khóa học</a>
-            <a className="block px-4 py-2 hover:bg-primary-50 text-primary" href="#">Danh sách thành viên</a>
-            <a className="block px-4 py-2 hover:bg-primary-50 text-primary" href="#">Điểm số</a>
-            <a className="block px-4 py-2 hover:bg-primary-50 text-primary" href="#">Năng lực</a>
-            <a className="block px-4 py-2 hover:bg-primary-50 text-rose-600" href="#">Thực Hành</a>
-            <a className="block px-4 py-2 hover:bg-primary-50 text-primary" href="#">Mở rộng tất cả</a>
-          </nav>
-        </aside>
-
+      <div>
         {/* Main content */}
-        <section>
-          <div className="rounded-md border border-primary-200 bg-white">
-            <div className="flex items-center gap-4 border-b border-primary-100 px-4">
-              {(["Khóa học", "Danh sách thành viên", "Điểm số", "Năng lực"] as const).map((t, i) => (
-                <button key={i} className={`h-10 px-3 text-sm ${i === 0 ? "border-b-2 border-primary text-primary-600" : "text-primary-400"}`}>{t}</button>
-              ))}
-            </div>
-            <div className="p-3 space-y-3">
-              {assignments.length === 0 ? (
-                <div className="text-center py-8 text-primary-400">
-                  Chưa có bài tập nào trong khóa học này
-                </div>
-              ) : (
-                assignments.map((assignment) => (
-                  <Link 
-                    href={`/student/course/${course.id}/assignment/${assignment.id}`} 
-                    key={assignment.id} 
-                    className="assignment-link block rounded-md border border-primary-200 bg-white p-3 hover:shadow-md hover:bg-primary-50 hover:border-primary-300 transition-all"
-                  > 
-                    <div className="flex items-center gap-2 text-sm">
-                      <div className="font-medium flex-1 text-primary">{assignment.title}</div>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-[11px] rounded px-2 py-0.5 font-medium ${
-                          assignment.type === 'EXERCISE' ? 'bg-primary-100 text-primary-800' :
-                          assignment.type === 'EXAM' ? 'bg-red-100 text-red-800' :
-                          assignment.type === 'PROJECT' ? 'bg-orange-100 text-orange-800' :
-                          assignment.type === 'QUIZ' ? 'bg-green-100 text-green-800' :
-                          'bg-primary-100 text-primary-800'
-                        }`}>
-                          {assignment.type === 'EXERCISE' ? 'Bài tập' :
-                           assignment.type === 'EXAM' ? 'Bài thi' :
-                           assignment.type === 'PROJECT' ? 'Dự án' :
-                           assignment.type === 'QUIZ' ? 'Kiểm tra nhanh' : assignment.type}
-                        </span>
-                        <span className="text-[11px] rounded bg-primary-600 px-2 py-0.5 text-white font-medium">
-                          {assignment.maxScore} điểm
-                        </span>
-                      </div>
-                    </div>
-                    {assignment.description && (
-                      <p className="mt-2 text-sm text-primary font-medium line-clamp-2">{assignment.description}</p>
-                    )}
-                    <div className="mt-2 flex items-center justify-between text-xs text-primary font-medium">
-                      <div className="flex items-center gap-4">
-                        {assignment.totalQuestions > 0 && (
-                          <span className="font-medium">
-                            {assignment.totalQuestions} câu hỏi
-                          </span>
-                        )}
-                        {assignment.endTime && (
-                          <span className="font-medium">
-                            Hạn nộp: {new Date(assignment.endTime).toLocaleDateString('vi-VN')}
-                          </span>
-                        )}
-                      </div>
-                      <div className="ml-auto flex items-center gap-2">
-                        <span>Thời gian: {assignment.timeLimit} phút</span>
-                        {assignment.isSubmitted && (
-                          <span className="text-primary-600 font-medium">✓ Đã nộp</span>
-                        )}
-                      </div>
-                    </div>
-                  </Link>
-                ))
-              )}
-            </div>
+        <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center gap-4 border-b border-slate-200 px-4 bg-slate-50">
+            {(["Khóa học", "Danh sách thành viên", "Điểm số", "Năng lực"] as const).map((t, i) => (
+              <button 
+                key={i} 
+                className={`h-12 px-4 text-sm font-medium transition-colors ${
+                  i === 0 
+                    ? "border-b-2 border-[#ff6a00] text-[#ff6a00]" 
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                {t}
+              </button>
+            ))}
           </div>
-        </section>
+          <div className="p-4 space-y-4">
+            {assignments.length === 0 ? (
+              <div className="text-center py-12 text-slate-500">
+                <p className="text-lg">Chưa có bài tập nào trong khóa học này</p>
+              </div>
+            ) : (
+              <>
+                {/* Render sections with assignments */}
+                {sections.map((section) => {
+                  const sectionAssignments = assignments.filter(
+                    (a: any) => a.sectionId === section.id
+                  );
+                  
+                  if (sectionAssignments.length === 0) return null;
+                  
+                  const isCollapsed = collapsedSections.has(section.id);
+                  
+                  return (
+                    <div key={section.id} className="border border-slate-200 rounded-lg overflow-hidden bg-white">
+                      {/* Section Header */}
+                      <div className="bg-slate-50 border-b border-slate-200">
+                        <div
+                          onClick={() => toggleSectionCollapse(section.id)}
+                          className="flex items-center justify-between p-3 cursor-pointer hover:bg-slate-100 transition-colors"
+                        >
+                          <div className="flex items-center gap-2">
+                            {/* Toggle Collapse Button */}
+                            <button
+                              className="p-1 hover:bg-slate-200 rounded transition-colors"
+                              aria-label={isCollapsed ? "Mở rộng" : "Thu gọn"}
+                            >
+                              <svg
+                                width="16"
+                                height="16"
+                                viewBox="0 0 16 16"
+                                fill="currentColor"
+                                className={`transition-transform duration-200 ${
+                                  isCollapsed ? "-rotate-90" : ""
+                                }`}
+                              >
+                                <path d="M4 6l4 4 4-4H4z" />
+                              </svg>
+                            </button>
+                            
+                            <div>
+                              <h3 className="font-semibold text-slate-900 text-sm">
+                                {section.name}
+                                <span className="ml-2 text-xs text-slate-500 font-normal">
+                                  ({sectionAssignments.length} bài tập)
+                                </span>
+                              </h3>
+                              {section.description && (
+                                <p className="text-xs text-slate-600 mt-0.5">
+                                  {section.description}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Section Content - Assignments */}
+                      {!isCollapsed && (
+                        <div className="p-3 space-y-3 bg-white">
+                          {sectionAssignments.map((assignment) =>
+                            renderAssignmentCard(assignment)
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Uncategorized assignments */}
+                {(() => {
+                  const uncategorizedAssignments = assignments.filter(
+                    (a: any) => !a.sectionId
+                  );
+                  
+                  if (uncategorizedAssignments.length === 0) return null;
+                  
+                  return (
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-semibold text-slate-700 px-2 py-1 bg-slate-100 rounded">
+                        Chưa phân loại ({uncategorizedAssignments.length})
+                      </h4>
+                      {uncategorizedAssignments.map((assignment) =>
+                        renderAssignmentCard(assignment)
+                      )}
+                    </div>
+                  );
+                })()}
+              </>
+            )}
+          </div>
+        </div>
       </div>
       </div>
     </MainLayout>

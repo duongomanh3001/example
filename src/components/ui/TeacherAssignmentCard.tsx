@@ -36,7 +36,7 @@ export default function TeacherAssignmentCard({ assignment, isTeacherView = fals
   };
 
   const href = isTeacherView 
-    ? `/teacher/assignment/${assignment.id}`
+    ? `/teacher/course/${assignment.courseId}/assignment/${assignment.id}`
     : `/student/assignment/${assignment.id}`;
 
   return (

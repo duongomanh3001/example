@@ -11,12 +11,14 @@ import iuh.fit.cscore_be.entity.Course;
 import iuh.fit.cscore_be.entity.Question;
 import iuh.fit.cscore_be.entity.TestCase;
 import iuh.fit.cscore_be.entity.User;
+import iuh.fit.cscore_be.entity.Section;
 import iuh.fit.cscore_be.exception.ResourceNotFoundException;
 import iuh.fit.cscore_be.exception.BadRequestException;
 import iuh.fit.cscore_be.repository.AssignmentRepository;
 import iuh.fit.cscore_be.repository.CourseRepository;
 import iuh.fit.cscore_be.repository.SubmissionRepository;
 import iuh.fit.cscore_be.repository.TestCaseRepository;
+import iuh.fit.cscore_be.repository.SectionRepository;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -50,6 +52,7 @@ public class AssignmentManagementService {
     private final CourseRepository courseRepository;
     private final TestCaseRepository testCaseRepository;
     private final SubmissionRepository submissionRepository;
+    private final SectionRepository sectionRepository;
     private final QuestionService questionService;
     
     @Autowired
@@ -507,6 +510,20 @@ public class AssignmentManagementService {
         assignment.setAutoGrade(request.getAutoGrade());
         assignment.setIsActive(true);
         
+        // Set section if provided
+        if (request.getSectionId() != null) {
+            log.info("📁 Attempting to set section ID: {}", request.getSectionId());
+            sectionRepository.findById(request.getSectionId()).ifPresentOrElse(
+                section -> {
+                    assignment.setSection(section);
+                    log.info("✅ Section set successfully: {} (ID: {})", section.getName(), section.getId());
+                },
+                () -> log.warn("⚠️ Section with ID {} not found", request.getSectionId())
+            );
+        } else {
+            log.info("ℹ️ No section ID provided for assignment");
+        }
+        
         return assignment;
     }
     
@@ -533,6 +550,15 @@ public class AssignmentManagementService {
     
     private void sendAssignmentNotifications(Assignment assignment) {
         try {
+            // Send notification to teacher who created the assignment
+            User teacher = assignment.getCourse().getTeacher();
+            notificationService.createTeacherAssignmentNotification(
+                teacher,
+                assignment.getId(),
+                assignment.getTitle(),
+                assignment.getCourse()
+            );
+            
             // Send notifications to enrolled students
             notificationService.notifyNewAssignment(assignment);
         } catch (Exception e) {
@@ -560,6 +586,7 @@ public class AssignmentManagementService {
                 .isActive(assignment.getIsActive())
                 .createdAt(assignment.getCreatedAt())
                 .totalQuestions((long) assignment.getQuestions().size())
+                .sectionId(assignment.getSection() != null ? assignment.getSection().getId() : null)
                 .build();
     }
     

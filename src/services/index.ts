@@ -6,3 +6,4 @@ export { default as DashboardService } from './dashboard.service';
 export { default as HealthService } from './health.service';
 export { default as UserService } from './user.service';
 export { NotificationService } from './notification.service';
+export { SectionService } from './section.service';

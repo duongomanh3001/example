@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Bell, X, Check, CheckCheck, Trash2, CheckCircle, AlertTriangle, XCircle, FileText } from 'lucide-react';
 import { useNotifications } from '@/contexts/NotificationContext';
 import { Notification, NotificationType } from '@/types/notification';
@@ -11,6 +12,7 @@ interface NotificationBellProps {
 }
 
 export const NotificationBell: React.FC<NotificationBellProps> = ({ className }) => {
+  const router = useRouter();
   const { 
     notifications, 
     unreadCount, 
@@ -62,12 +64,15 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ className })
   };
 
   const handleNotificationClick = async (notification: Notification) => {
+    // Mark as read if not already read
     if (!notification.isRead) {
       await markAsRead([notification.id]);
     }
     
+    // Close dropdown and navigate to the action URL if it exists
+    setIsOpen(false);
     if (notification.actionUrl) {
-      window.location.href = notification.actionUrl;
+      router.push(notification.actionUrl);
     }
   };
 
@@ -204,8 +209,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ className })
               <button 
                 onClick={() => {
                   setIsOpen(false);
-                  // Navigate to notifications page
-                  window.location.href = '/notifications';
+                  router.push('/notifications');
                 }}
                 className="text-sm text-blue-600 hover:text-blue-800 w-full text-center"
               >

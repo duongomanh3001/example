@@ -2,40 +2,43 @@
 
 import { useEffect, useState } from "react";
 import CourseCard from "@/components/ui/CourseCard";
-import ViewToggle from "@/components/common/ViewToggle";
+import Calendar from "@/components/common/Calendar";
+import AssignmentDetailsModal from "@/components/common/AssignmentDetailsModal";
+import UpcomingAssignments from "@/components/common/UpcomingAssignments";
 import { withAuth } from "@/components/hoc/withAuth";
 import { Role } from "@/types/auth";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
 import { CourseService } from "@/services/course.service";
-import { CourseResponse } from "@/types/api";
+import { AssignmentService } from "@/services/assignment.service";
+import { CourseResponse, StudentAssignmentResponse } from "@/types/api";
 import Link from "next/link";
 import TeacherLayout from "@/components/layouts/TeacherLayout";
 
 function TeacherPage() {
-  const [currentView, setCurrentView] = useState<'teacher' | 'student'>('teacher');
   const [courses, setCourses] = useState<CourseResponse[]>([]);
+  const [assignments, setAssignments] = useState<StudentAssignmentResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [selectedAssignments, setSelectedAssignments] = useState<StudentAssignmentResponse[]>([]);
   
-  const { getUserDisplayName, getRoleName } = useRoleAccess();
+  const { getUserDisplayName } = useRoleAccess();
 
   useEffect(() => {
     fetchData();
-  }, [currentView]);
+  }, []);
 
   const fetchData = async () => {
     try {
       setLoading(true);
       
-      if (currentView === 'teacher') {
-        // Fetch teacher courses data
-        const teacherCourses = await CourseService.getTeacherCourses();
-        setCourses(teacherCourses);
-      } else {
-        // Fetch student data when in student view
-        const enrolledCourses = await CourseService.getEnrolledCourses();
-        setCourses(enrolledCourses);
-      }
+      // Fetch teacher courses and assignments data
+      const [teacherCourses, teacherAssignments] = await Promise.all([
+        CourseService.getTeacherCourses(),
+        AssignmentService.getAssignmentsForStudent() // This will get all assignments accessible
+      ]);
+      setCourses(teacherCourses);
+      setAssignments(teacherAssignments);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Có lỗi xảy ra khi tải dữ liệu';
       if (errorMessage.includes('không mong muốn') || errorMessage.includes('Network Error') || errorMessage.includes('failed to fetch')) {
@@ -47,6 +50,16 @@ function TeacherPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleDateClick = (date: Date, dayAssignments: StudentAssignmentResponse[]) => {
+    setSelectedDate(date);
+    setSelectedAssignments(dayAssignments);
+  };
+
+  const handleCloseModal = () => {
+    setSelectedDate(null);
+    setSelectedAssignments([]);
   };
 
   if (loading) {
@@ -75,73 +88,60 @@ function TeacherPage() {
     );
   }
 
-  const getViewLabel = () => {
-    if (currentView === 'teacher') {
-      return 'Giáo viên - Khóa học đang giảng dạy';
-    }
-    return 'Sinh viên - Khóa học đã đăng ký';
-  };
-
-  const getCourseHref = (courseId: number) => {
-    if (currentView === 'teacher') {
-      return `/teacher/course/${courseId}`;
-    }
-    return `/student/course/${courseId}`;
-  };
-
   return (
     <TeacherLayout>
-      <div className="h-full">
-        {/* Header with View Toggle */}
-        <div className="mb-6 flex justify-between items-start">
-          <div>
-            <h1 className="text-[#ff6a00] font-semibold text-xl">
-              Chào mừng, {getUserDisplayName()}
-            </h1>
-            <p className="text-slate-500 text-sm mt-1">
-              {getViewLabel()}
-            </p>
-          </div>
-          <ViewToggle 
-            currentView={currentView} 
-            onViewChange={setCurrentView}
-          />
+      <div>
+        {/* Header */}
+        <div className="mb-6">
+          <h1 className="text-[#ff6a00] font-semibold text-xl">
+            Chào mừng, {getUserDisplayName()}
+          </h1>
+          <p className="text-slate-500 text-sm mt-1">
+            Giáo viên - Khóa học đang giảng dạy
+          </p>
         </div>
 
-
+        {/* Calendar and Upcoming Assignments Section */}
+        <div className="mb-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2">
+            <h2 className="text-lg font-semibold text-slate-900 mb-4">Lịch bài tập</h2>
+            <Calendar 
+              assignments={assignments}
+              onDateClick={handleDateClick}
+            />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900 mb-4">Sắp tới hạn</h2>
+            <UpcomingAssignments 
+              assignments={assignments}
+              viewType="teacher"
+              maxItems={8}
+            />
+          </div>
+        </div>
 
         {/* Courses Section */}
         <div className="mb-6">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-lg font-semibold text-slate-900">
-              {currentView === 'teacher' ? 'Khóa học tôi đang dạy' : 'Các khóa học của tôi'}
+              Khóa học tôi đang dạy
             </h2>
-            {currentView === 'teacher' && (
-              <Link 
-                href="/teacher/assignment/create"
-                className="bg-[#ff6a00] text-white px-4 py-2 rounded-md hover:bg-[#e55a00] transition-colors text-sm"
-              >
-                + Tạo bài tập mới
-              </Link>
-            )}
+            <Link 
+              href="/teacher/assignment/create"
+              className="bg-[#ff6a00] text-white px-4 py-2 rounded-md hover:bg-[#e55a00] transition-colors text-sm"
+            >
+              + Tạo bài tập mới
+            </Link>
           </div>
           
           {courses.length === 0 ? (
             <div className="bg-slate-50 border border-slate-200 rounded-lg p-12 text-center">
               <h3 className="text-lg font-medium text-slate-900 mb-2">
-                {currentView === 'teacher' ? 'Chưa có khóa học nào' : 'Chưa đăng ký khóa học'}
+                Chưa có khóa học nào
               </h3>
               <p className="text-slate-500 mb-4">
-                {currentView === 'teacher' 
-                  ? 'Bạn chưa được phân công giảng dạy khóa học nào' 
-                  : 'Bạn chưa đăng ký khóa học nào'
-                }
+                Bạn chưa được phân công giảng dạy khóa học nào
               </p>
-              {currentView === 'student' && (
-                <button className="bg-emerald-600 text-white px-4 py-2 rounded-md hover:bg-emerald-700 transition-colors">
-                  Xem khóa học có sẵn
-                </button>
-              )}
             </div>
           ) : (
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -150,15 +150,25 @@ function TeacherPage() {
                   key={course.id}
                   title={course.name}
                   code={course.code}
-                  percent={currentView === 'teacher' ? 100 : 0}
-                  gradient={currentView === 'teacher' ? "from-orange-500 to-orange-600" : "from-emerald-500 to-emerald-600"}
+                  percent={100}
+                  gradient="from-orange-500 to-orange-600"
                   logoText={course.code.substring(0, 2).toUpperCase()}
-                  href={getCourseHref(course.id)}
+                  href={`/teacher/course/${course.id}`}
                 />
               ))}
             </div>
           )}
         </div>
+
+        {/* Assignment Details Modal */}
+        {selectedDate && selectedAssignments.length > 0 && (
+          <AssignmentDetailsModal
+            date={selectedDate}
+            assignments={selectedAssignments}
+            onClose={handleCloseModal}
+            viewType="teacher"
+          />
+        )}
       </div>
     </TeacherLayout>
   );

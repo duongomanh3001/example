@@ -2,18 +2,25 @@
 
 import { useEffect, useState } from "react";
 import CourseCard from "@/components/ui/CourseCard";
+import Calendar from "@/components/common/Calendar";
+import AssignmentDetailsModal from "@/components/common/AssignmentDetailsModal";
+import UpcomingAssignments from "@/components/common/UpcomingAssignments";
 import { withAuth } from "@/components/hoc/withAuth";
 import { Role } from "@/types/auth";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
 import { CourseService } from "@/services/course.service";
-import { CourseResponse } from "@/types/api";
+import { AssignmentService } from "@/services/assignment.service";
+import { CourseResponse, StudentAssignmentResponse } from "@/types/api";
 import Link from "next/link";
 import StudentLayout from "@/components/layouts/StudentLayout";
 
 function StudentDashboard() {
   const [courses, setCourses] = useState<CourseResponse[]>([]);
+  const [assignments, setAssignments] = useState<StudentAssignmentResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [selectedAssignments, setSelectedAssignments] = useState<StudentAssignmentResponse[]>([]);
   
   const { getUserDisplayName, getRoleName } = useRoleAccess();
 
@@ -22,9 +29,13 @@ function StudentDashboard() {
       try {
         setLoading(true);
         
-        // Fetch enrolled courses only
-        const enrolledCourses = await CourseService.getEnrolledCourses();
+        // Fetch enrolled courses and assignments
+        const [enrolledCourses, studentAssignments] = await Promise.all([
+          CourseService.getEnrolledCourses(),
+          AssignmentService.getAssignmentsForStudent()
+        ]);
         setCourses(enrolledCourses);
+        setAssignments(studentAssignments);
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Có lỗi xảy ra khi tải dữ liệu';
         if (errorMessage.includes('không mong muốn') || errorMessage.includes('Network Error') || errorMessage.includes('failed to fetch')) {
@@ -40,6 +51,16 @@ function StudentDashboard() {
 
     fetchData();
   }, []);
+
+  const handleDateClick = (date: Date, dayAssignments: StudentAssignmentResponse[]) => {
+    setSelectedDate(date);
+    setSelectedAssignments(dayAssignments);
+  };
+
+  const handleCloseModal = () => {
+    setSelectedDate(null);
+    setSelectedAssignments([]);
+  };
 
   if (loading) {
     return (
@@ -69,7 +90,7 @@ function StudentDashboard() {
 
   return (
     <StudentLayout>
-      <div className="h-full">
+      <div>
         {/* Welcome Section */}
         <div className="mb-6">
           <h1 className="text-primary font-semibold text-xl">
@@ -78,37 +99,66 @@ function StudentDashboard() {
           <p className="text-primary-400 text-sm mt-1">
             {getRoleName()} - Các khóa học đã đăng ký
           </p>
-      </div>
-
-      {/* Courses Section */}
-      <div className="mb-6">
-        <h2 className="text-lg font-semibold text-primary mb-6">Các khóa học của tôi</h2>
-        
-        {courses.length === 0 ? (
-          <div className="bg-primary-50 border border-primary-200 rounded-lg p-12 text-center">
-            <div className="text-6xl mb-4"></div>
-            <h3 className="text-lg font-medium text-primary mb-2">Chưa có khóa học nào</h3>
-            <p className="text-primary-400 mb-4">Bạn chưa đăng ký khóa học nào</p>
-            <button className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary-600 transition-colors">
-              Xem khóa học có sẵn
-            </button>
-          </div>
-        ) : (
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {courses.map((course) => (
-              <CourseCard 
-                key={course.id}
-                title={course.name}
-                code={course.code}
-                percent={0}
-                gradient="from-primary to-primary-600"
-                logoText={course.code.substring(0, 2).toUpperCase()}
-                href={`/student/course/${course.id}`}
-              />
-            ))}
-          </div>
-        )}
         </div>
+
+        {/* Calendar and Upcoming Assignments Section */}
+        <div className="mb-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2">
+            <h2 className="text-lg font-semibold text-primary mb-4">Lịch bài tập</h2>
+            <Calendar 
+              assignments={assignments}
+              onDateClick={handleDateClick}
+            />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-primary mb-4">Sắp tới hạn</h2>
+            <UpcomingAssignments 
+              assignments={assignments}
+              viewType="student"
+              maxItems={8}
+            />
+          </div>
+        </div>
+
+        {/* Courses Section */}
+        <div className="mb-6">
+          <h2 className="text-lg font-semibold text-primary mb-6">Các khóa học của tôi</h2>
+          
+          {courses.length === 0 ? (
+            <div className="bg-primary-50 border border-primary-200 rounded-lg p-12 text-center">
+              <div className="text-6xl mb-4"></div>
+              <h3 className="text-lg font-medium text-primary mb-2">Chưa có khóa học nào</h3>
+              <p className="text-primary-400 mb-4">Bạn chưa đăng ký khóa học nào</p>
+              <button className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary-600 transition-colors">
+                Xem khóa học có sẵn
+              </button>
+            </div>
+          ) : (
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {courses.map((course) => (
+                <CourseCard 
+                  key={course.id}
+                  title={course.name}
+                  code={course.code}
+                  percent={0}
+                  gradient="from-primary to-primary-600"
+                  logoText={course.code.substring(0, 2).toUpperCase()}
+                  href={`/student/course/${course.id}`}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Assignment Details Modal */}
+        {selectedDate && selectedAssignments.length > 0 && (
+          <AssignmentDetailsModal
+            date={selectedDate}
+            assignments={selectedAssignments}
+            onClose={handleCloseModal}
+            viewType="student"
+          />
+        )}
       </div>
     </StudentLayout>
   );

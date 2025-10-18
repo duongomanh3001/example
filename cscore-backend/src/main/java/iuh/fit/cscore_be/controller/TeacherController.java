@@ -46,6 +46,7 @@ public class TeacherController {
     private final UserService userService;
     private final AutoGradingService autoGradingService;
     private final CodeExecutionService codeExecutionService;
+    private final SectionService sectionService;
     
     // ======================== DASHBOARD ========================
     
@@ -162,8 +163,11 @@ public class TeacherController {
     public ResponseEntity<DetailedAssignmentResponse> createAssignment(
             @Valid @RequestBody CreateAssignmentRequest request,
             @AuthenticationPrincipal UserPrincipal userPrincipal) {
+        log.info("📝 Creating assignment '{}' for course {} with sectionId: {}", 
+                request.getTitle(), request.getCourseId(), request.getSectionId());
         User teacher = userService.findById(userPrincipal.getId());
         DetailedAssignmentResponse assignment = assignmentManagementService.createAssignmentWithQuestions(request, teacher);
+        log.info("✅ Assignment created successfully with ID: {}", assignment.getId());
         return ResponseEntity.status(HttpStatus.CREATED).body(assignment);
     }
     
@@ -503,5 +507,64 @@ public class TeacherController {
             
             return ResponseEntity.ok(errorResponse);
         }
+    }
+    
+    // ======================== SECTIONS ========================
+    
+    @GetMapping("/courses/{courseId}/sections")
+    @PreAuthorize("hasRole('TEACHER')")
+    public ResponseEntity<List<iuh.fit.cscore_be.dto.response.SectionResponse>> getSectionsByCourse(
+            @PathVariable Long courseId,
+            @AuthenticationPrincipal UserPrincipal userPrincipal) {
+        log.info("Teacher {} getting sections for course {}", userPrincipal.getUsername(), courseId);
+        List<iuh.fit.cscore_be.dto.response.SectionResponse> sections = sectionService.getSectionsByCourse(courseId);
+        return ResponseEntity.ok(sections);
+    }
+    
+    @PostMapping("/courses/{courseId}/sections")
+    @PreAuthorize("hasRole('TEACHER')")
+    public ResponseEntity<iuh.fit.cscore_be.dto.response.SectionResponse> createSection(
+            @PathVariable Long courseId,
+            @Valid @RequestBody iuh.fit.cscore_be.dto.request.CreateSectionRequest request,
+            @AuthenticationPrincipal UserPrincipal userPrincipal) {
+        log.info("Teacher {} creating section for course {}", userPrincipal.getUsername(), courseId);
+        request.setCourseId(courseId);
+        iuh.fit.cscore_be.dto.response.SectionResponse section = sectionService.createSection(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(section);
+    }
+    
+    @PutMapping("/sections/{sectionId}")
+    @PreAuthorize("hasRole('TEACHER')")
+    public ResponseEntity<iuh.fit.cscore_be.dto.response.SectionResponse> updateSection(
+            @PathVariable Long sectionId,
+            @Valid @RequestBody iuh.fit.cscore_be.dto.request.UpdateSectionRequest request,
+            @AuthenticationPrincipal UserPrincipal userPrincipal) {
+        log.info("Teacher {} updating section {}", userPrincipal.getUsername(), sectionId);
+        iuh.fit.cscore_be.dto.response.SectionResponse section = sectionService.updateSection(sectionId, request);
+        return ResponseEntity.ok(section);
+    }
+    
+    @DeleteMapping("/sections/{sectionId}")
+    @PreAuthorize("hasRole('TEACHER')")
+    public ResponseEntity<Void> deleteSection(
+            @PathVariable Long sectionId,
+            @AuthenticationPrincipal UserPrincipal userPrincipal) {
+        log.info("Teacher {} deleting section {}", userPrincipal.getUsername(), sectionId);
+        sectionService.deleteSection(sectionId);
+        return ResponseEntity.noContent().build();
+    }
+    
+    // Note: toggle-collapse endpoint removed - handled on frontend only
+    
+    @PutMapping("/courses/{courseId}/sections/reorder")
+    @PreAuthorize("hasRole('TEACHER')")
+    public ResponseEntity<List<iuh.fit.cscore_be.dto.response.SectionResponse>> reorderSections(
+            @PathVariable Long courseId,
+            @RequestBody Map<String, List<Long>> request,
+            @AuthenticationPrincipal UserPrincipal userPrincipal) {
+        log.info("Teacher {} reordering sections for course {}", userPrincipal.getUsername(), courseId);
+        List<Long> sectionIds = request.get("sectionIds");
+        List<iuh.fit.cscore_be.dto.response.SectionResponse> sections = sectionService.reorderSections(courseId, sectionIds);
+        return ResponseEntity.ok(sections);
     }
 }

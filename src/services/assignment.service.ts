@@ -419,6 +419,7 @@ class AssignmentServiceClass {
       courseName: assignment.courseName || assignment.course?.name || '',
       courseId: assignment.courseId || assignment.course?.id || 0,
       courseCode: assignment.courseCode || assignment.course?.code || '',
+      sectionId: assignment.sectionId, // Add section reference
       maxScore: assignment.maxScore || 100,
       timeLimit: assignment.timeLimit || 60,
       startTime: assignment.startTime,
